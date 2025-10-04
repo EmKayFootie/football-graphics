@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import zipfile
 import shutil
 import subprocess
 import glob
@@ -8,21 +7,19 @@ import sys
 import pandas as pd
 
 # --- Configuration for Git Repository Files ---
-# Define the project structure AS IT EXISTS in your Git repo root
-# These files will be copied from the repo root to the temporary project_dir
 GIT_FILES_TO_COPY = [
     "results.xlsx",
     "Fixtures - automated.py",
     "match of the day - automated.py",
     "Results - automated.py",
     "table - automated.py",
-    "BebasNeue Regular.ttf", # Original name with space
+    "BebasNeue Regular.ttf", # Keep original name for consistency
 ]
 GIT_DIRS_TO_COPY = [
     "Logos",
     "Templates",
 ]
-RENAMED_FONT_FILE = "BebasNeue_Regular.ttf" # New name without spaces for reliability
+# We will use the original name and rely on CWD change, so NO RENAME is needed
 # ----------------------------------------------
 
 # Streamlit GUI
@@ -37,44 +34,25 @@ if os.path.exists(project_dir):
     shutil.rmtree(project_dir)
 os.makedirs(project_dir, exist_ok=True)
 
-# Define the root of the Streamlit application (where the Git repo contents are)
 repo_root = os.getcwd() 
 
-# Copy individual files from the repo root to the project_dir
+# Copy individual files
 all_files_present = True
 for item in GIT_FILES_TO_COPY:
     source_path = os.path.join(repo_root, item)
+    dest_path = os.path.join(project_dir, item)
     
-    # CRITICAL FIX LOGIC: Rename font file to remove space during copy
-    if item == "BebasNeue Regular.ttf":
-        dest_path = os.path.join(project_dir, RENAMED_FONT_FILE) # Use the new name
-        
-        # Check for the font file using the space-less name too, just in case
-        source_check_path = os.path.join(repo_root, RENAMED_FONT_FILE) 
-        
-        if os.path.exists(source_path):
-            shutil.copy2(source_path, dest_path)
-        elif os.path.exists(source_check_path): # If the user renamed it in Git
-            shutil.copy2(source_check_path, dest_path)
-        else:
-            st.error(f"FATAL ERROR: Required font file not found in Git repository: {item}")
-            all_files_present = False
-            
-    # Handle all other files as before
+    if os.path.exists(source_path):
+        shutil.copy2(source_path, dest_path)
     else:
-        dest_path = os.path.join(project_dir, item)
-        if os.path.exists(source_path):
-            shutil.copy2(source_path, dest_path)
-        else:
-            st.error(f"FATAL ERROR: Required file not found in Git repository: {item}")
-            all_files_present = False
+        st.error(f"FATAL ERROR: Required file not found in Git repository: {item}")
+        all_files_present = False
 
-# Copy folders from the repo root to the project_dir
+# Copy folders
 for item in GIT_DIRS_TO_COPY:
     source_path = os.path.join(repo_root, item)
     dest_path = os.path.join(project_dir, item)
     if os.path.exists(source_path):
-        # Use copytree to copy the folder contents
         shutil.copytree(source_path, dest_path)
     else:
         st.error(f"FATAL ERROR: Required directory not found in Git repository: {item}")
@@ -87,19 +65,15 @@ else:
 
 # --- Continue with the rest of the logic ---
 
-# Check for required files
 if not os.path.exists(os.path.join(project_dir, "results.xlsx")):
     st.error("Error: results.xlsx not found in project folder!")
     st.stop()
 
-# Ensure Graphics folder exists
 graphics_dir = os.path.join(project_dir, "Graphics")
 os.makedirs(graphics_dir, exist_ok=True)
 
-# Mode selection dropdown
 mode = st.selectbox("Select Graphic Type", ["Fixtures", "Match of the Day", "Results", "Table"])
 
-# Map mode to script
 script_map = {
     "Fixtures": "Fixtures - automated.py",
     "Match of the Day": "match of the day - automated.py",
@@ -113,60 +87,22 @@ if not os.path.exists(script_path_in_project):
     st.error(f"Error: {selected_script} not found in project folder!")
     st.stop()
 
-# Button to run the script
 if st.button(f"Generate {mode} Graphics"):
     with st.spinner(f"Generating {mode} graphics..."):
         
-        # --- PATH INJECTION FOR SUBPROCESS ---
+        # --- CRITICAL FIX: Change CWD to the project folder ---
+        original_cwd = os.getcwd()
+        os.chdir(project_dir) # Change CWD to the folder containing the font and excel file
         
-        # 1. Define all absolute paths for injection
-        absolute_project_dir = os.path.abspath(project_dir)
-        absolute_excel_path = os.path.normpath(os.path.join(absolute_project_dir, "results.xlsx"))
-        absolute_logos_folder = os.path.normpath(os.path.join(absolute_project_dir, "Logos"))
-        absolute_save_folder = os.path.normpath(os.path.join(absolute_project_dir, "Graphics"))
-        absolute_templates_folder = os.path.normpath(os.path.join(absolute_project_dir, "Templates"))
-        # CRITICAL FIX: Absolute path for the font file (using the space-free name)
-        absolute_font_path = os.path.normpath(os.path.join(absolute_project_dir, RENAMED_FONT_FILE))
-        
-        # 2. Read the script content
-        script_content = open(script_path_in_project, 'r', encoding='utf-8').read()
-        
-        # 3. Perform Path Replacements
-        # We replace the common simple relative path ("results.xlsx") with the new ABSOLUTE path.
-        script_content = script_content.replace(
-            'RESULTS_FILE_PATH = "results.xlsx"',
-            f'RESULTS_FILE_PATH = r"{absolute_excel_path}"'
-        ).replace(
-            'FIXTURES_FILE_PATH = "results.xlsx"', # For fixtures script
-            f'FIXTURES_FILE_PATH = r"{absolute_excel_path}"'
-        ).replace(
-            'LOGOS_FOLDER = "Logos"',
-            f'LOGOS_FOLDER = r"{absolute_logos_folder}"'
-        ).replace(
-            'SAVE_FOLDER = "Graphics"',
-            f'SAVE_FOLDER = r"{absolute_save_folder}"'
-        ).replace(
-            'TEMPLATES_FOLDER = "Templates"',
-            f'TEMPLATES_FOLDER = r"{absolute_templates_folder}"'
-        ).replace(
-            # This line specifically fixes the font loading issue by using the absolute path
-            # and targets the old relative path inside the scripts.
-            'FONT_PATH = "BebasNeue Regular.ttf"',
-            f'FONT_PATH = r"{absolute_font_path}"'
-        )
-        
-        # 4. Save modified script to a temp file
-        temp_script_path = os.path.join(project_dir, "temp_" + selected_script)
-        with open(temp_script_path, 'w', encoding='utf-8') as f:
-            f.write(script_content)
-            
-        # 5. Run the temporary script
         try:
+            # The script will now run as if its root is 'tmp/project',
+            # so relative paths like "BebasNeue Regular.ttf" should work!
+            
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
             
-            # Run the temp script
-            result = subprocess.run([sys.executable, temp_script_path], capture_output=True, text=True, env=env)
+            # Run the script using its simple name, as CWD is set correctly
+            result = subprocess.run([sys.executable, selected_script], capture_output=True, text=True, env=env)
             
             st.write("**Console Output:**")
             st.code(result.stdout)
@@ -176,14 +112,16 @@ if st.button(f"Generate {mode} Graphics"):
                 st.success(f"{mode} graphics generated successfully!")
         except Exception as e:
             st.error(f"Error running script: {e}")
+        finally:
+            # IMPORTANT: Change the working directory back
+            os.chdir(original_cwd)
             
-    # Provide download links for generated PNGs and ZIP (uses graphics_dir)
+    # Provide download links for generated PNGs and ZIP (unchanged logic)
     if os.path.exists(graphics_dir):
         png_files = glob.glob(os.path.join(graphics_dir, "*.png"))
         
         if png_files:
             st.write("**Download Generated Graphics:**")
-            # Individual PNG downloads
             for png in png_files:
                 with open(png, "rb") as f:
                     st.download_button(
@@ -192,7 +130,6 @@ if st.button(f"Generate {mode} Graphics"):
                         file_name=os.path.basename(png),
                         mime="image/png"
                     )
-            # ZIP download for all PNGs
             zip_path = os.path.join("tmp", "graphics.zip")
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for png in png_files:
