@@ -1,5 +1,5 @@
 import os
-from PIL import Image, ImageDraw, ImageFont # Removed ImageResampling
+from PIL import Image, ImageDraw, ImageFont # Corrected import
 import pandas as pd
 from datetime import datetime
 from collections import defaultdict
@@ -7,16 +7,19 @@ import math
 
 print("✅ STARTING SCRIPT")
 
-# --- Configuration Constants ---
+# --- Streamlit/GitHub Environment Setup ---
+# Define the base directory of the script to ensure all paths are relative and work on the server
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) 
+
+# --- Configuration Constants (FIXED FOR RELATIVE PATHS) ---
 # Paths
-# NOTE: Update these paths if you've moved your project or files!
-FIXTURES_FILE_PATH = r"C:\Users\Matt\Desktop\Sunday Football\results.xlsx"
-LOGOS_FOLDER = r"C:\Users\Matt\Desktop\Sunday Football\Logos"
-SAVE_FOLDER = r"C:\Users\Matt\Desktop\Sunday Football\Graphics"
-TEMPLATES_FOLDER = r"C:\Users\Matt\Desktop\Sunday Football\Templates"
+# 🛑 FIX: Use relative paths joined from BASE_DIR for Streamlit compatibility
+FIXTURES_FILE_PATH = os.path.join(BASE_DIR, "results.xlsx")
+LOGOS_FOLDER = os.path.join(BASE_DIR, "Logos")  
+SAVE_FOLDER = os.path.join(BASE_DIR, "Graphics") # This folder must exist on your local machine
+TEMPLATES_FOLDER = os.path.join(BASE_DIR, "Templates") 
 TEMPLATE_PATH = os.path.join(TEMPLATES_FOLDER, "fixtures_template.png")
-# Ensure this FONT_PATH is 100% correct on your machine!
-FONT_PATH = r"C:\Users\Matt\AppData\Local\Microsoft\Windows\Fonts\BebasNeue Regular.ttf"
+FONT_PATH = os.path.join(BASE_DIR, "BebasNeue Regular.ttf") # Font file must be in the repo root
 
 # Image Dimensions and Layout
 IMAGE_WIDTH = 1080
@@ -252,7 +255,7 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     # 🛑 FONT FIX START: Loading and Verification
     if not os.path.exists(FONT_PATH):
         print(f"FATAL ERROR: Configured FONT_PATH does not exist: {FONT_PATH}")
-        print("Please ensure the path is correct or the font is installed.")
+        print("Please ensure the font file is committed to your GitHub repository.")
         return 
         
     try:
@@ -280,6 +283,7 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     # Calculate optimal date font size
     font_size = FONT_SIZE_DATE
     while font_size >= FONT_SIZE_DATE_MIN:
+        # Re-load font at the appropriate size for high-res rendering
         date_font = ImageFont.truetype(FONT_PATH, int(font_size * HIGH_RES_SCALE))
         
         # Calculate text bounding boxes for fitting
@@ -308,7 +312,6 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     )
     
     # Calculate vertical positions for centered text
-    # 5 * HIGH_RES_SCALE is the spacing between lines
     text_height_half = (day_height + month_height + year_height + 10 * HIGH_RES_SCALE) // 2
     day_y = DATE_CENTER_Y - text_height_half
     month_y = day_y + day_height + 5 * HIGH_RES_SCALE
@@ -443,8 +446,15 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
         
         is_first_division_of_graphic = False 
 
-    # Final Image Saving
+    # Final Image Saving (This will save locally for testing)
+    # Streamlit Cloud deployments generally don't use this output folder, 
+    # but the image object 'img' is what you would pass to st.image()
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
+    # Ensure local save folder exists for testing
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+        
     output_file_path = os.path.join(save_folder, f"Fixtures_Part{part_number}_{current_time}.png")
     img.save(output_file_path)
     print(f"Graphic saved to: {output_file_path}")
@@ -513,6 +523,8 @@ def generate_fixtures_graphics(file_path: str, logos_folder: str, save_folder: s
         # Determine the section type for height calculation
         calc_div_name = "Cup" if division_name.lower().startswith("cup") else division_name
         
+        # NOTE: Using 'True' here for the initial section height calculation is correct only for the very first item
+        # We need to rely on the logic inside the function to track spacing accurately
         division_height = calculate_division_height(calc_div_name, matches, is_first_division_of_graphic)
         
         if current_height + division_height <= SAFE_CONTENT_HEIGHT_LIMIT or not current_graphic:
@@ -524,9 +536,12 @@ def generate_fixtures_graphics(file_path: str, logos_folder: str, save_folder: s
             # Doesn't fit, finalize the current graphic and start a new one
             final_graphics_sections.append(current_graphic)
             
+            # Recalculate the height of the current section, assuming it is now the FIRST on the NEW graphic
+            division_height_new_start = calculate_division_height(calc_div_name, matches, is_first_division=True)
+            
             # Start a new graphic with the current section
             current_graphic = [(calc_div_name, matches)]
-            current_height = division_height
+            current_height = division_height_new_start
             is_first_division_of_graphic = False
             
     # Add the last graphic
@@ -535,10 +550,13 @@ def generate_fixtures_graphics(file_path: str, logos_folder: str, save_folder: s
 
     # --- 4. Render Graphics ---
     part_number = 1
-    for sections_to_draw in final_graphics_sections:
-        print(f"\n--- RENDERING GRAPHIC PART {part_number} ---")
-        create_match_graphic_with_heading(sections_to_draw, logos_folder, save_folder, part_number, template_path, current_date)
-        part_number += 1
+    if final_graphics_sections:
+        for sections_to_draw in final_graphics_sections:
+            print(f"\n--- RENDERING GRAPHIC PART {part_number} ---")
+            create_match_graphic_with_heading(sections_to_draw, logos_folder, save_folder, part_number, template_path, current_date)
+            part_number += 1
+    else:
+        print("\n⚠️ No matches were found. No graphics generated.")
 
     print(f"\n✅ Completed generating {part_number-1} graphic(s)")
 
