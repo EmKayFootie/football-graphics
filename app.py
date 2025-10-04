@@ -5,6 +5,7 @@ import subprocess
 import glob
 import sys
 import pandas as pd
+import zipfile
 
 # --- Configuration for Git Repository Files ---
 GIT_FILES_TO_COPY = [
