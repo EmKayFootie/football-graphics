@@ -44,15 +44,14 @@ for item in GIT_FILES_TO_COPY:
     if os.path.exists(source_path):
         shutil.copy2(source_path, dest_path)
         
-        # --- CRITICAL FIX: SET FILE PERMISSIONS ---
+        # --- CRITICAL FIX: SET FILE PERMISSIONS for font ---
         if item.endswith((".ttf", ".otf")):
             # Set the file permission to be globally readable (0o777 grants max access)
             try:
                 os.chmod(dest_path, 0o777)
             except Exception as e:
-                # This should not fail, but we handle it just in case
                 st.warning(f"Warning: Could not set permissions for font file. {e}")
-        # ------------------------------------------
+        # --------------------------------------------------
         
     else:
         st.error(f"FATAL ERROR: Required file not found in Git repository: {item}")
@@ -73,7 +72,7 @@ if not all_files_present:
 else:
     st.success("Project files loaded successfully from the Git repository.")
 
-# --- Continue with the rest of the logic (CWD is set here) ---
+# --- Continue with the rest of the logic ---
 
 if not os.path.exists(os.path.join(project_dir, "results.xlsx")):
     st.error("Error: results.xlsx not found in project folder!")
@@ -105,17 +104,12 @@ if st.button(f"Generate {mode} Graphics"):
         os.chdir(project_dir) # Change CWD to the folder containing the font and excel file
         
         try:
-            # The script will now run as if its root is 'tmp/project',
-            # so relative paths like "BebasNeue Regular.ttf" should work!
-            
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
             
-            # Run the script using its simple name, as CWD is set correctly
-            # Note: We use the full path here because the subprocess is technically started
-            # from the root of the app, even if CWD is changed for the execution environment.
-            # Using the full script path with CWD set is the most reliable combo.
-            result = subprocess.run([sys.executable, script_path_in_project], capture_output=True, text=True, env=env)
+            # --- FINAL FIX: Use the simple filename (selected_script)
+            # This avoids the duplicated path error since CWD is already set to project_dir
+            result = subprocess.run([sys.executable, selected_script], capture_output=True, text=True, env=env)
             
             st.write("**Console Output:**")
             st.code(result.stdout)
@@ -131,6 +125,7 @@ if st.button(f"Generate {mode} Graphics"):
             
     # Provide download links for generated PNGs and ZIP (unchanged logic)
     if os.path.exists(graphics_dir):
+        # We must use the full path to graphics_dir here as CWD is back to original
         png_files = glob.glob(os.path.join(graphics_dir, "*.png"))
         
         if png_files:
