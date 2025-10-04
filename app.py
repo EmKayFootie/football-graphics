@@ -4,6 +4,7 @@ import zipfile
 import shutil
 import subprocess
 import glob
+import sys # <-- NEW: Import sys to get the correct Python executable path
 
 # Streamlit GUI
 st.title("Football Graphics Generator")
@@ -107,7 +108,10 @@ if uploaded_file:
             try:
                 env = os.environ.copy()
                 env["PYTHONIOENCODING"] = "utf-8"
-                result = subprocess.run(["python", temp_script], capture_output=True, text=True, env=env)
+                
+                # *** FIX HERE: Use sys.executable to run Python from the Streamlit virtual environment ***
+                result = subprocess.run([sys.executable, temp_script], capture_output=True, text=True, env=env)
+                
                 st.write("**Console Output:**")
                 st.code(result.stdout)
                 if result.stderr:
