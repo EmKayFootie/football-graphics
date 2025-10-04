@@ -2,23 +2,21 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 import pandas as pd
 from datetime import datetime
+import glob # Needed for debugging
 
 # --- Deployment Environment Setup ---
-# Use os.path.dirname(__file__) to get the directory where the script is running
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- Configuration Constants ---
-# Paths (FIXED to use relative/environment-safe paths)
+# Paths (using BASE_DIR which should resolve the path)
 LEAGUE_TABLE_FILE_PATH = os.path.join(BASE_DIR, "table.xlsx")
 LOGOS_FOLDER = os.path.join(BASE_DIR, "Logos")
 SAVE_FOLDER = os.path.join(BASE_DIR, "Graphics")
 TEMPLATES_FOLDER = os.path.join(BASE_DIR, "Templates")
-
-# Assuming the font is in the same directory or accessible.
-# Since the app is working in the cloud, we'll assume the font file is also local.
 FONT_PATH = os.path.join(BASE_DIR, "BebasNeue Regular.ttf") 
 
-# Image Dimensions and Layout
+# ... (All other constants remain the same) ...
+
 IMAGE_WIDTH = 1080
 IMAGE_HEIGHT = 1350
 TABLE_LEFT_OFFSET = 33
@@ -33,12 +31,9 @@ HIGH_RES_SCALE = 2
 DATE_TEXT_MAX_WIDTH = DATE_CIRCLE_SIZE - 20
 DATE_TEXT_MAX_HEIGHT = DATE_CIRCLE_SIZE - 20
 
-# Column Layout
 COL_POS_WIDTH = 60
 COL_TEAM_NAME_WIDTH = 400
 COL_STAT_WIDTH = 80
-# Adjusted to be relative to TABLE_LEFT_OFFSET later for cleaner code,
-# but using the current structure to minimize changes:
 COL_POSITIONS = {
     "Pos": 10,
     "Team": 10 + COL_POS_WIDTH + LOGO_SIZE + 10,
@@ -50,18 +45,15 @@ COL_POSITIONS = {
     "PTS": 10 + COL_POS_WIDTH + LOGO_SIZE + COL_TEAM_NAME_WIDTH + 20 + COL_STAT_WIDTH * 5,
 }
 
-# Font Sizes
 FONT_SIZE_NORMAL = 50
 FONT_SIZE_HEADER = 50
 FONT_SIZE_DATE = 40
 FONT_SIZE_DATE_MIN = 30
 
-# Text Spacing and Adjustments
 LINE_SPACING_TEAM_NAME = 10
 VISUAL_Y_OFFSET_CORRECTION = -5
 HEADER_TEXT_TOP_PADDING = 19
 
-# Template Mappings
 DIVISION_TEMPLATES = {
     "Division 1": "division_1_league_template.png",
     "Division 2": "division_2_league_template.png",
@@ -69,38 +61,34 @@ DIVISION_TEMPLATES = {
     "Division 4": "division_4_league_template.png",
 }
 
-# Special Team Logo Mappings
 SPECIAL_LOGO_MAPPING = {
     "afc aldermaston a": "AFC Aldermaston.png",
     "afc aldermaston b": "AFC Aldermaston.png",
     "eversley & california sunday": "Eversley & California.png",
 }
 
-# --- Helper Functions ---
+# --- Helper Functions (No changes needed here) ---
+
 def get_logo(team_name: str, logos_folder: str) -> Image.Image:
     """
     Loads a team logo, handling specific variants and searching subfolders.
-    Returns a resized PIL Image object. (Simplified and fixed logo handling)
+    Returns a resized PIL Image object.
     """
     valid_extensions = ('.png', '.jpg', '.jpeg')
     team_name_lower = team_name.strip().lower()
     
-    # 1. Check Special Mapping
     logo_filename = None
     for variant_key, filename in SPECIAL_LOGO_MAPPING.items():
         if variant_key in team_name_lower:
             logo_filename = filename
             break
 
-    # 2. Search for the logo file
     search_names = [logo_filename] if logo_filename else [f'{team_name_lower}.png', f'{team_name_lower}.jpg']
     
-    # Add common variants for the filename search if no special map was used
     if not logo_filename:
         base_name = team_name.strip().replace(' ', '')
         search_names.extend([f'{base_name}.png', f'{base_name}.jpg', f'{base_name.replace("united", "utd")}.png'])
     
-    logo_found = False
     
     for name in search_names:
         for subfolder in ['Current Teams', 'Old Teams', '']:
@@ -112,10 +100,8 @@ def get_logo(team_name: str, logos_folder: str) -> Image.Image:
                 except Exception as e:
                     print(f"Error loading logo for {team_name} from '{search_path}': {e}")
                 
-    # 3. Fallback to Generic Logo
     generic_logo_path = os.path.join(logos_folder, 'genericlogo.png')
     try:
-        # print(f"Warning: No specific logo found for {team_name}. Using generic logo.")
         return Image.open(generic_logo_path).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
     except Exception as e:
         print(f"Error loading generic logo: {e}. Using gray placeholder.")
@@ -127,8 +113,8 @@ def parse_league_table_from_file(file_path: str, division: str) -> pd.DataFrame:
     Returns a pandas DataFrame.
     """
     try:
-        # Check if file exists before trying to read it
         if not os.path.exists(file_path):
+             # NOTE: This FileNotFoundError will now only be raised after the debugging check.
              raise FileNotFoundError(f"File not found: {file_path}")
              
         excel_data = pd.read_excel(file_path, sheet_name=division)
@@ -144,17 +130,14 @@ def parse_league_table_from_file(file_path: str, division: str) -> pd.DataFrame:
 def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.ImageDraw) -> list[str]:
     """
     Wraps text to fit within a maximum width, returning a list of lines.
-    (Simplified text wrapping logic for robustness)
     """
     words = text.split()
     lines = []
     current_line = []
     
     def get_text_width(txt, f):
-        # Use a temporary draw object if needed, but here we can use the passed one
         return draw.textbbox((0, 0), txt, font=f)[2] - draw.textbbox((0, 0), txt, font=f)[0]
     
-    space_width = get_text_width(" ", font)
     
     for word in words:
         test_line = " ".join(current_line + [word])
@@ -187,7 +170,7 @@ def get_wrapped_text_block_height(lines: list[str], font: ImageFont.FreeTypeFont
             total_height += line_spacing
     return total_height
 
-# --- Main Graphic Generation Function ---
+# --- Main Graphic Generation Function (No changes needed here) ---
 def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, save_folder: str, division_name: str, current_date: datetime):
     """
     Creates a league table graphic for a specific division with a date circle.
@@ -207,7 +190,6 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
         font = ImageFont.truetype(FONT_PATH, FONT_SIZE_NORMAL)
         header_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADER)
     except IOError:
-        print(f"Warning: Could not load font from {FONT_PATH}. Using default font.")
         font = header_font = ImageFont.load_default()
 
     # Draw date circle on a high-resolution temporary image
@@ -215,7 +197,7 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
     circle_img = Image.new("RGBA", (high_res_size, high_res_size), (0, 0, 0, 0))
     circle_draw = ImageDraw.Draw(circle_img)
     day_text = current_date.strftime("%d")
-    month_text = current_date.strftime("%b").upper() # Use abbreviated month for better fit
+    month_text = current_date.strftime("%b").upper()
     year_text = current_date.strftime("%Y")
     circle_center_x = high_res_size // 2
     circle_center_y = high_res_size // 2
@@ -225,13 +207,11 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
     date_font = None 
     
     while font_size >= FONT_SIZE_DATE_MIN:
-        # Attempt to load font size
         try:
             date_font = ImageFont.truetype(FONT_PATH, int(font_size * HIGH_RES_SCALE))
         except IOError:
-            date_font = ImageFont.load_default() # Fallback
+            date_font = ImageFont.load_default() 
 
-        # Use the font for bbox calculation
         temp_date_font = date_font if isinstance(date_font, ImageFont.FreeTypeFont) else ImageFont.load_default() 
         
         day_bbox = circle_draw.textbbox((0, 0), day_text, font=temp_date_font)
@@ -250,9 +230,6 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
         
         font_size -= 2
     
-    if font_size < FONT_SIZE_DATE_MIN:
-        print(f"Warning: Font size reduced to {FONT_SIZE_DATE_MIN} for date text to fit in circle.")
-
     circle_draw.ellipse(
         [0, 0, high_res_size, high_res_size],
         fill=(255, 255, 255, 255),
@@ -260,24 +237,20 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
         width=DATE_CIRCLE_STROKE * HIGH_RES_SCALE
     )
     
-    # Calculate text Y positions
     text_height_half = total_text_height // 2
     day_y = circle_center_y - text_height_half
     month_y = day_y + day_height + 5 * HIGH_RES_SCALE
     year_y = month_y + month_height + 5 * HIGH_RES_SCALE
     
-    # Draw text
     circle_draw.text((circle_center_x - (day_bbox[2] - day_bbox[0]) // 2, day_y), day_text, fill=(0, 0, 0, 255), font=date_font)
     circle_draw.text((circle_center_x - (month_bbox[2] - month_bbox[0]) // 2, month_y), month_text, fill=(0, 0, 0, 255), font=date_font)
     circle_draw.text((circle_center_x - (year_bbox[2] - year_bbox[0]) // 2, year_y), year_text, fill=(0, 0, 0, 255), font=date_font)
     
-    # Downscale and paste date circle (FIXED to use Image.LANCZOS)
     circle_img = circle_img.resize((DATE_CIRCLE_SIZE, DATE_CIRCLE_SIZE), Image.LANCZOS)
     img.paste(circle_img, (DATE_CIRCLE_X, DATE_CIRCLE_Y), circle_img)
 
     # Create table content
     table_content_height = HEADER_TEXT_TOP_PADDING + FONT_SIZE_HEADER + (len(league_data) * ROW_HEIGHT) + 20
-    # Ensure canvas is large enough
     table_img = Image.new("RGBA", (IMAGE_WIDTH, int(table_content_height) + TABLE_TOP_OFFSET), (0, 0, 0, 0))
     d = ImageDraw.Draw(table_img)
 
@@ -290,8 +263,6 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
         header_width_actual = header_bbox[2] - header_bbox[0]
         col_width = COL_POS_WIDTH if header == "Pos" else COL_TEAM_NAME_WIDTH if header == "Team" else COL_STAT_WIDTH
         
-        # NOTE: COL_POSITIONS are defined assuming the full width. We need to center relative to the column start + width.
-        # Since table_img starts at (0, 0) for its contents, we use the raw COL_POSITIONS values.
         header_x = COL_POSITIONS[header] + (col_width - header_width_actual) // 2
         d.text((header_x, header_y), header, fill=(255, 255, 255), font=header_font)
 
@@ -302,7 +273,6 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
 
     # Loop through teams
     for _, row in league_data.iterrows():
-        # Ensure all fields are strings to avoid drawing errors
         pos = str(row.get('Pos', ''))
         team_name = str(row.get('Team', ''))
         played = str(row.get('P', ''))
@@ -317,12 +287,9 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
         # Draw logo
         logo = get_logo(team_name, logos_folder)
         if logo:
-            # Logo resizing is handled inside get_logo now
             logo_x = COL_POSITIONS["Pos"] + COL_POS_WIDTH + (COL_POSITIONS["Team"] - (COL_POSITIONS["Pos"] + COL_POS_WIDTH) - LOGO_SIZE) // 2
             logo_y = int(centerline_y - (LOGO_SIZE // 2))
             table_img.paste(logo, (logo_x, logo_y), logo)
-        else:
-            print(f"Failed to load logo for {team_name}")
 
         # Position text
         pos_bbox = d.textbbox((0, 0), pos, font=font)
@@ -359,7 +326,6 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
         current_row_y += ROW_HEIGHT
 
     # Paste table onto template
-    # Since table_img was created with a large enough height, we just paste the relevant section
     img.paste(table_img, (TABLE_LEFT_OFFSET, TABLE_TOP_OFFSET), table_img)
 
     # Save the image
@@ -372,23 +338,56 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
     img.save(output_file_path)
     print(f"Graphic saved to: {output_file_path}")
 
-# Main function to process all divisions
+# --- Main function to process all divisions (FIXED WITH DEBUGGING) ---
 def generate_league_table_graphics(file_path: str, logos_folder: str, save_folder: str):
     """
     Main function to process all divisions and generate league table graphics.
-    Reads date from 'Division 1' sheet, cell R2C9 (row 1, col 8).
+    Includes debugging to show the actual path and file listing.
     """
-    # Read date from Division 1 sheet, cell R2C9 (row 1, column 8)
+    
+    # ----------------------------------------------------
+    # 🛑 CRITICAL DEBUGGING SECTION 🛑
+    # ----------------------------------------------------
+    print("\n--- DEBUGGING FILE PATH START ---")
+    
+    # 1. Print the determined file path
+    print(f"DEBUG: Attempting to access file at: {file_path}")
+    
+    # 2. Print the script's current working directory (BASE_DIR)
+    base_dir_used = os.path.dirname(os.path.abspath(__file__))
+    print(f"DEBUG: BASE_DIR (Script Directory) is: {base_dir_used}")
+    
+    # 3. List all files in the script directory (BASE_DIR)
+    print(f"DEBUG: Files visible in {base_dir_used}:")
+    try:
+        visible_files = os.listdir(base_dir_used)
+        for item in visible_files:
+            # Highlight table.xlsx if it's found
+            if item.lower() == 'table.xlsx':
+                print(f"   --> ✅ FOUND: {item}")
+            else:
+                print(f"   - {item}")
+    except Exception as e:
+        print(f"   - Failed to list directory contents: {e}")
+        
+    print("--- DEBUGGING FILE PATH END ---\n")
+    # ----------------------------------------------------
+    
     current_date = datetime.now()
     try:
+        # Check if file exists based on the path
         if not os.path.exists(file_path):
-             raise FileNotFoundError(f"File not found: {file_path}")
+             # This confirms if os.path.exists() can see the file at the generated path
+             raise FileNotFoundError(f"File not found by os.path.exists(): {file_path}")
              
+        # Attempt to read the date
         date_df = pd.read_excel(file_path, sheet_name='Division 1', header=None)
+        
         if date_df.shape[0] > 1 and date_df.shape[1] > 8:
-            # Data is at row index 1 (R2), column index 8 (C9)
             date_data = date_df.iloc[1, 8]
             date_str = str(date_data).strip()
+            
+            # ... (Date parsing logic remains the same) ...
             date_formats = ['%d/%m/%Y', '%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%d-%m-%Y']
             parsed_date = None
             
@@ -411,16 +410,17 @@ def generate_league_table_graphics(file_path: str, logos_folder: str, save_folde
             print(f"Warning: 'Division 1' sheet too small or missing cell R2C9 in {file_path}. Using current date.")
             
     except FileNotFoundError as e:
-        print(f"Error reading date file: {e}. Using current date.")
+        # This is where the error surfaces if the file is truly invisible
+        print(f"CRITICAL ERROR (File System/Permissions): {e}. Using current date.")
     except Exception as e:
-        print(f"Error reading 'Division 1' sheet, cell R2C9 from {file_path}: {e}. Using current date.")
-
+        # This catches errors like sheet name not found, or pandas read issues
+        print(f"CRITICAL ERROR (Pandas/Data): Error reading 'Division 1' sheet: {e}. Using current date.")
+        
     divisions_to_generate = ["Division 1", "Division 2", "Division 3", "Division 4"]
     for division in divisions_to_generate:
         print(f"Processing {division}...")
         league_data = parse_league_table_from_file(file_path, division)
         if not league_data.empty:
-            # Check for required columns before attempting to draw
             required_cols = ['Pos', 'Team', 'P', 'W', 'D', 'L', 'GD', 'PTS']
             if all(col in league_data.columns for col in required_cols):
                 create_league_table_graphic(
