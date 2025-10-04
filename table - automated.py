@@ -2,21 +2,20 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 import pandas as pd
 from datetime import datetime
-import glob # Needed for debugging
 
 # --- Deployment Environment Setup ---
+# Use os.path.dirname(__file__) to get the directory where the script is running
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- Configuration Constants ---
-# Paths (using BASE_DIR which should resolve the path)
-LEAGUE_TABLE_FILE_PATH = os.path.join(BASE_DIR, "table.xlsx")
+# NOTE: This path is set dynamically later in the main function based on file discovery.
+LEAGUE_TABLE_FILE_PATH = os.path.join(BASE_DIR, "table.xlsx") 
 LOGOS_FOLDER = os.path.join(BASE_DIR, "Logos")
 SAVE_FOLDER = os.path.join(BASE_DIR, "Graphics")
 TEMPLATES_FOLDER = os.path.join(BASE_DIR, "Templates")
 FONT_PATH = os.path.join(BASE_DIR, "BebasNeue Regular.ttf") 
 
-# ... (All other constants remain the same) ...
-
+# Image Dimensions and Layout
 IMAGE_WIDTH = 1080
 IMAGE_HEIGHT = 1350
 TABLE_LEFT_OFFSET = 33
@@ -31,6 +30,7 @@ HIGH_RES_SCALE = 2
 DATE_TEXT_MAX_WIDTH = DATE_CIRCLE_SIZE - 20
 DATE_TEXT_MAX_HEIGHT = DATE_CIRCLE_SIZE - 20
 
+# Column Layout
 COL_POS_WIDTH = 60
 COL_TEAM_NAME_WIDTH = 400
 COL_STAT_WIDTH = 80
@@ -45,15 +45,18 @@ COL_POSITIONS = {
     "PTS": 10 + COL_POS_WIDTH + LOGO_SIZE + COL_TEAM_NAME_WIDTH + 20 + COL_STAT_WIDTH * 5,
 }
 
+# Font Sizes
 FONT_SIZE_NORMAL = 50
 FONT_SIZE_HEADER = 50
 FONT_SIZE_DATE = 40
 FONT_SIZE_DATE_MIN = 30
 
+# Text Spacing and Adjustments
 LINE_SPACING_TEAM_NAME = 10
 VISUAL_Y_OFFSET_CORRECTION = -5
 HEADER_TEXT_TOP_PADDING = 19
 
+# Template Mappings
 DIVISION_TEMPLATES = {
     "Division 1": "division_1_league_template.png",
     "Division 2": "division_2_league_template.png",
@@ -61,14 +64,14 @@ DIVISION_TEMPLATES = {
     "Division 4": "division_4_league_template.png",
 }
 
+# Special Team Logo Mappings
 SPECIAL_LOGO_MAPPING = {
     "afc aldermaston a": "AFC Aldermaston.png",
     "afc aldermaston b": "AFC Aldermaston.png",
     "eversley & california sunday": "Eversley & California.png",
 }
 
-# --- Helper Functions (No changes needed here) ---
-
+# --- Helper Functions ---
 def get_logo(team_name: str, logos_folder: str) -> Image.Image:
     """
     Loads a team logo, handling specific variants and searching subfolders.
@@ -114,7 +117,6 @@ def parse_league_table_from_file(file_path: str, division: str) -> pd.DataFrame:
     """
     try:
         if not os.path.exists(file_path):
-             # NOTE: This FileNotFoundError will now only be raised after the debugging check.
              raise FileNotFoundError(f"File not found: {file_path}")
              
         excel_data = pd.read_excel(file_path, sheet_name=division)
@@ -170,10 +172,11 @@ def get_wrapped_text_block_height(lines: list[str], font: ImageFont.FreeTypeFont
             total_height += line_spacing
     return total_height
 
-# --- Main Graphic Generation Function (No changes needed here) ---
+# --- Main Graphic Generation Function ---
 def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, save_folder: str, division_name: str, current_date: datetime):
     """
     Creates a league table graphic for a specific division with a date circle.
+    (Function body remains the same as previous corrected version)
     """
     template_filename = DIVISION_TEMPLATES.get(division_name, "division_1_league_template.png")
     template_path = os.path.join(TEMPLATES_FOLDER, template_filename)
@@ -338,56 +341,69 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
     img.save(output_file_path)
     print(f"Graphic saved to: {output_file_path}")
 
-# --- Main function to process all divisions (FIXED WITH DEBUGGING) ---
+# --- Main function to process all divisions ---
 def generate_league_table_graphics(file_path: str, logos_folder: str, save_folder: str):
     """
     Main function to process all divisions and generate league table graphics.
-    Includes debugging to show the actual path and file listing.
+    Includes robust file discovery and debugging.
     """
-    
+    global LEAGUE_TABLE_FILE_PATH # Allow updating the global constant reference
+
     # ----------------------------------------------------
-    # 🛑 CRITICAL DEBUGGING SECTION 🛑
+    # 🛑 CRITICAL DEBUGGING & FILE RESOLUTION SECTION 🛑
     # ----------------------------------------------------
-    print("\n--- DEBUGGING FILE PATH START ---")
-    
-    # 1. Print the determined file path
-    print(f"DEBUG: Attempting to access file at: {file_path}")
-    
-    # 2. Print the script's current working directory (BASE_DIR)
     base_dir_used = os.path.dirname(os.path.abspath(__file__))
+    
+    print("\n--- DEBUGGING FILE PATH START ---")
     print(f"DEBUG: BASE_DIR (Script Directory) is: {base_dir_used}")
     
-    # 3. List all files in the script directory (BASE_DIR)
+    # List all files and identify .xlsx files
+    found_xlsx_files = []
     print(f"DEBUG: Files visible in {base_dir_used}:")
     try:
         visible_files = os.listdir(base_dir_used)
         for item in visible_files:
-            # Highlight table.xlsx if it's found
-            if item.lower() == 'table.xlsx':
-                print(f"   --> ✅ FOUND: {item}")
+            if item.lower().endswith('.xlsx'):
+                found_xlsx_files.append(item)
+                print(f"   --> ✅ FOUND XLSX: {item}")
             else:
                 print(f"   - {item}")
     except Exception as e:
         print(f"   - Failed to list directory contents: {e}")
         
+    # Determine the correct file name to use
+    final_file_name = None
+    if 'table.xlsx' in found_xlsx_files:
+        final_file_name = 'table.xlsx' 
+    elif 'results.xlsx' in found_xlsx_files:
+        final_file_name = 'results.xlsx' 
+    elif len(found_xlsx_files) == 1:
+        final_file_name = found_xlsx_files[0] # Use the only XLSX found
+        
+    if final_file_name:
+        file_path = os.path.join(base_dir_used, final_file_name)
+        LEAGUE_TABLE_FILE_PATH = file_path # Update global constant
+        print(f"DEBUG: Final resolved XLSX path set to: {file_path}")
+    else:
+        file_path = os.path.join(base_dir_used, "table.xlsx") # Fallback to original path
+        print(f"DEBUG: CRITICAL - No single XLSX file detected. Falling back to: {file_path}")
+
     print("--- DEBUGGING FILE PATH END ---\n")
     # ----------------------------------------------------
     
     current_date = datetime.now()
     try:
-        # Check if file exists based on the path
+        # Check file existence again using the resolved path
         if not os.path.exists(file_path):
-             # This confirms if os.path.exists() can see the file at the generated path
              raise FileNotFoundError(f"File not found by os.path.exists(): {file_path}")
              
-        # Attempt to read the date
+        # Attempt to read the date from Division 1 using the resolved path
         date_df = pd.read_excel(file_path, sheet_name='Division 1', header=None)
         
+        # ... (Date parsing logic starts here) ...
         if date_df.shape[0] > 1 and date_df.shape[1] > 8:
             date_data = date_df.iloc[1, 8]
             date_str = str(date_data).strip()
-            
-            # ... (Date parsing logic remains the same) ...
             date_formats = ['%d/%m/%Y', '%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%d-%m-%Y']
             parsed_date = None
             
@@ -410,16 +426,15 @@ def generate_league_table_graphics(file_path: str, logos_folder: str, save_folde
             print(f"Warning: 'Division 1' sheet too small or missing cell R2C9 in {file_path}. Using current date.")
             
     except FileNotFoundError as e:
-        # This is where the error surfaces if the file is truly invisible
         print(f"CRITICAL ERROR (File System/Permissions): {e}. Using current date.")
     except Exception as e:
-        # This catches errors like sheet name not found, or pandas read issues
-        print(f"CRITICAL ERROR (Pandas/Data): Error reading 'Division 1' sheet: {e}. Using current date.")
-        
+        print(f"CRITICAL ERROR (Pandas/Data): Error reading 'Division 1' sheet or date parsing failed: {e}. Using current date.")
+
     divisions_to_generate = ["Division 1", "Division 2", "Division 3", "Division 4"]
     for division in divisions_to_generate:
         print(f"Processing {division}...")
-        league_data = parse_league_table_from_file(file_path, division)
+        # Pass the dynamically resolved path
+        league_data = parse_league_table_from_file(file_path, division) 
         if not league_data.empty:
             required_cols = ['Pos', 'Team', 'P', 'W', 'D', 'L', 'GD', 'PTS']
             if all(col in league_data.columns for col in required_cols):
