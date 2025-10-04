@@ -16,12 +16,13 @@ GIT_FILES_TO_COPY = [
     "match of the day - automated.py",
     "Results - automated.py",
     "table - automated.py",
-    "BebasNeue Regular.ttf",
+    "BebasNeue Regular.ttf", # Original name with space
 ]
 GIT_DIRS_TO_COPY = [
     "Logos",
     "Templates",
 ]
+RENAMED_FONT_FILE = "BebasNeue_Regular.ttf" # New name without spaces for reliability
 # ----------------------------------------------
 
 # Streamlit GUI
@@ -29,8 +30,6 @@ st.title("⚽ Football Graphics Generator")
 st.write("Using files and scripts directly from the deployed GitHub repository.")
 
 # --- File Setup Block: Copies Files from Git Repo to Tmp Folder ---
-# This block copies the files from the Git repo root into a tmp folder
-# where the rest of the script expects them (project_dir).
 
 # Create and clean the project directory
 project_dir = os.path.join("tmp", "project")
@@ -45,12 +44,30 @@ repo_root = os.getcwd()
 all_files_present = True
 for item in GIT_FILES_TO_COPY:
     source_path = os.path.join(repo_root, item)
-    dest_path = os.path.join(project_dir, item)
-    if os.path.exists(source_path):
-        shutil.copy2(source_path, dest_path)
+    
+    # CRITICAL FIX LOGIC: Rename font file to remove space during copy
+    if item == "BebasNeue Regular.ttf":
+        dest_path = os.path.join(project_dir, RENAMED_FONT_FILE) # Use the new name
+        
+        # Check for the font file using the space-less name too, just in case
+        source_check_path = os.path.join(repo_root, RENAMED_FONT_FILE) 
+        
+        if os.path.exists(source_path):
+            shutil.copy2(source_path, dest_path)
+        elif os.path.exists(source_check_path): # If the user renamed it in Git
+            shutil.copy2(source_check_path, dest_path)
+        else:
+            st.error(f"FATAL ERROR: Required font file not found in Git repository: {item}")
+            all_files_present = False
+            
+    # Handle all other files as before
     else:
-        st.error(f"FATAL ERROR: Required file not found in Git repository: {item}")
-        all_files_present = False
+        dest_path = os.path.join(project_dir, item)
+        if os.path.exists(source_path):
+            shutil.copy2(source_path, dest_path)
+        else:
+            st.error(f"FATAL ERROR: Required file not found in Git repository: {item}")
+            all_files_present = False
 
 # Copy folders from the repo root to the project_dir
 for item in GIT_DIRS_TO_COPY:
@@ -108,15 +125,14 @@ if st.button(f"Generate {mode} Graphics"):
         absolute_logos_folder = os.path.normpath(os.path.join(absolute_project_dir, "Logos"))
         absolute_save_folder = os.path.normpath(os.path.join(absolute_project_dir, "Graphics"))
         absolute_templates_folder = os.path.normpath(os.path.join(absolute_project_dir, "Templates"))
-        # CRITICAL FIX: Absolute path for the font file
-        absolute_font_path = os.path.normpath(os.path.join(absolute_project_dir, "BebasNeue Regular.ttf"))
+        # CRITICAL FIX: Absolute path for the font file (using the space-free name)
+        absolute_font_path = os.path.normpath(os.path.join(absolute_project_dir, RENAMED_FONT_FILE))
         
         # 2. Read the script content
         script_content = open(script_path_in_project, 'r', encoding='utf-8').read()
         
         # 3. Perform Path Replacements
-        # NOTE: The keys being replaced MUST match the EXACT string in your Fixtures/Results scripts.
-        # We are replacing the old relative path with the new absolute path.
+        # We replace the common simple relative path ("results.xlsx") with the new ABSOLUTE path.
         script_content = script_content.replace(
             'RESULTS_FILE_PATH = "results.xlsx"',
             f'RESULTS_FILE_PATH = r"{absolute_excel_path}"'
@@ -134,11 +150,12 @@ if st.button(f"Generate {mode} Graphics"):
             f'TEMPLATES_FOLDER = r"{absolute_templates_folder}"'
         ).replace(
             # This line specifically fixes the font loading issue by using the absolute path
+            # and targets the old relative path inside the scripts.
             'FONT_PATH = "BebasNeue Regular.ttf"',
             f'FONT_PATH = r"{absolute_font_path}"'
         )
         
-        # 4. Save modified script to a temp file (same name in the project directory)
+        # 4. Save modified script to a temp file
         temp_script_path = os.path.join(project_dir, "temp_" + selected_script)
         with open(temp_script_path, 'w', encoding='utf-8') as f:
             f.write(script_content)
@@ -148,7 +165,7 @@ if st.button(f"Generate {mode} Graphics"):
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
             
-            # Run the temp script directly (it's in the project_dir, but we use its full path)
+            # Run the temp script
             result = subprocess.run([sys.executable, temp_script_path], capture_output=True, text=True, env=env)
             
             st.write("**Console Output:**")
