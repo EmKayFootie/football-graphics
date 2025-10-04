@@ -1,19 +1,21 @@
 import os
-from PIL import Image, ImageDraw, ImageFont, ImageResampling
+from PIL import Image, ImageDraw, ImageFont # Removed ImageResampling
 import pandas as pd
 from datetime import datetime
 from collections import defaultdict
+import math
 
 print("✅ STARTING SCRIPT")
 
 # --- Configuration Constants ---
 # Paths
+# NOTE: Update these paths if you've moved your project or files!
 FIXTURES_FILE_PATH = r"C:\Users\Matt\Desktop\Sunday Football\results.xlsx"
 LOGOS_FOLDER = r"C:\Users\Matt\Desktop\Sunday Football\Logos"
 SAVE_FOLDER = r"C:\Users\Matt\Desktop\Sunday Football\Graphics"
 TEMPLATES_FOLDER = r"C:\Users\Matt\Desktop\Sunday Football\Templates"
 TEMPLATE_PATH = os.path.join(TEMPLATES_FOLDER, "fixtures_template.png")
-# NOTE: Ensure this path is 100% correct on your machine!
+# Ensure this FONT_PATH is 100% correct on your machine!
 FONT_PATH = r"C:\Users\Matt\AppData\Local\Microsoft\Windows\Fonts\BebasNeue Regular.ttf"
 
 # Image Dimensions and Layout
@@ -35,9 +37,11 @@ DATE_CIRCLE_SIZE = 142
 DATE_CIRCLE_X = 1080 - 138 - 142
 DATE_CIRCLE_Y = 95
 DATE_CIRCLE_STROKE = 3
-HIGH_RES_SCALE = 2
+HIGH_RES_SCALE = 2 # Used for date circle rendering
 DATE_TEXT_MAX_WIDTH = DATE_CIRCLE_SIZE - 20
 DATE_TEXT_MAX_HEIGHT = DATE_CIRCLE_SIZE - 20
+DATE_CENTER_X = (DATE_CIRCLE_SIZE * HIGH_RES_SCALE) // 2
+DATE_CENTER_Y = (DATE_CIRCLE_SIZE * HIGH_RES_SCALE) // 2
 
 # Font Sizes
 FONT_SIZE_NORMAL = 65
@@ -57,70 +61,75 @@ SPECIAL_LOGO_MAPPING = {
     "afc aldermaston b": "AFC Aldermaston.png",
 }
 
-# Teams that might need a smaller font
+# Teams that might need a smaller font (for text wrapping)
 TEAMS_FOR_SMALLER_FONT = ["AFC Aldermaston A", "AFC Aldermaston B"]
 
-# Pre-calculate spacing based on font (if font is missing, these will be wrong, 
-# but they must be calculated once outside the loop)
+# --- Pre-calculate spacing based on font ---
+HEADING_SPACE = 0
+CUP_NAME_SPACE = 0
 
-try:
-    HEADING_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
-    CUP_NAME_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_CUP_NAME)
-except IOError:
-    # Use a dummy font/value if the true font can't be found for pre-calculation
-    HEADING_FONT_TEMP = ImageFont.load_default()
-    CUP_NAME_FONT_TEMP = ImageFont.load_default()
-    print("Warning: Could not load required fonts for pre-calculation. Layout heights may be inaccurate.")
+# Check if font path is valid for pre-calculation
+if os.path.exists(FONT_PATH):
+    try:
+        HEADING_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
+        CUP_NAME_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_CUP_NAME)
+        
+        # Calculate Bounding Box of typical text for accurate height
+        heading_bbox = HEADING_FONT_TEMP.getbbox("League")
+        cup_name_bbox = CUP_NAME_FONT_TEMP.getbbox("Example Cup Name")
+        
+        HEADING_TEXT_HEIGHT = heading_bbox[3] - heading_bbox[1]
+        HEADING_SPACE = 20 + HEADING_TEXT_HEIGHT + 20 # 20px buffer before, 20px after
 
-HEADING_TEXT_HEIGHT = HEADING_FONT_TEMP.getbbox("Cup")[3] - HEADING_FONT_TEMP.getbbox("Cup")[1]
-HEADING_SPACE = 20 + HEADING_TEXT_HEIGHT + 20 # 20px buffer before, 20px after
+        CUP_NAME_TEXT_HEIGHT = cup_name_bbox[3] - cup_name_bbox[1]
+        CUP_NAME_SPACE = 5 + CUP_NAME_TEXT_HEIGHT + 10 # 5px buffer before, 10px after
+    except IOError:
+        # Fallback if font exists but can't be loaded by PIL
+        print("Warning: Could not load required fonts for pre-calculation. Using default height estimates.")
+        HEADING_SPACE = 100 
+        CUP_NAME_SPACE = 70
+else:
+    # Fallback if font doesn't exist at all
+    print("Warning: Configured font path is invalid. Using default height estimates.")
+    HEADING_SPACE = 100 
+    CUP_NAME_SPACE = 70
 
-CUP_NAME_TEXT_HEIGHT = CUP_NAME_FONT_TEMP.getbbox("Example Cup Name")[3] - CUP_NAME_FONT_TEMP.getbbox("Example Cup Name")[1]
-CUP_NAME_SPACE = 5 + CUP_NAME_TEXT_HEIGHT + 10 # 5px buffer before, 10px after
 
 print("✅ Configuration constants loaded.")
 
-# --- Helper Functions (MODIFIED) ---
+# --- Helper Functions ---
 
 def get_logo(team_name: str, logos_folder: str) -> Image.Image:
-    """
-    Finds the logo for a team by searching 'Current Teams' and 'Old Teams' subfolders.
-    """
+    """Finds and resizes the logo for a team."""
     team_name_clean = team_name.strip()
     team_name_lower = team_name_clean.lower()
     
-    logo_filename = SPECIAL_LOGO_MAPPING.get(team_name_lower)
+    logo_filename = SPECIAL_LOGO_MAPPING.get(team_name_lower, f'{team_name_clean}.png')
     
-    if logo_filename:
-        for subfolder in ['Current Teams', 'Old Teams']:
-            search_path = os.path.join(logos_folder, subfolder, logo_filename)
-            if os.path.exists(search_path):
-                try:
-                    return Image.open(search_path).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), ImageResampling.LANCZOS)
-                except Exception as e:
-                    print(f"Error loading MAPPED logo '{logo_filename}' for {team_name} from '{search_path}': {e}")
-
+    # Search 'Current Teams' and 'Old Teams'
     for subfolder in ['Current Teams', 'Old Teams']:
-        search_path = os.path.join(logos_folder, subfolder, f'{team_name_clean}.png')
+        search_path = os.path.join(logos_folder, subfolder, logo_filename)
         if os.path.exists(search_path):
             try:
-                return Image.open(search_path).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), ImageResampling.LANCZOS)
+                # 🛑 FIX: Changed ImageResampling.LANCZOS to Image.LANCZOS
+                return Image.open(search_path).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), Image.LANCZOS)
             except Exception as e:
-                print(f"Error loading logo for {team_name} from '{search_path}': {e}")
-    
+                print(f"Error loading logo '{logo_filename}' for {team_name}: {e}")
+
     generic_logo_path = os.path.join(logos_folder, 'genericlogo.png')
     try:
         print(f"Warning: No specific logo found for {team_name}. Using generic logo.")
-        return Image.open(generic_logo_path).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), ImageResampling.LANCZOS)
+        # 🛑 FIX: Changed ImageResampling.LANCZOS to Image.LANCZOS
+        return Image.open(generic_logo_path).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), Image.LANCZOS)
     except Exception as e:
         print(f"Error loading generic logo: {e}. Using gray placeholder.")
         return Image.new("RGBA", (LOGO_WIDTH, LOGO_HEIGHT), (200, 200, 200, 255))
 
 def parse_matches_from_file(file_path: str, division: str) -> list[tuple]:
+    """Reads matches from the specified Excel sheet."""
     matches = []
     try:
         excel_data = pd.read_excel(file_path, sheet_name=division)
-        print(f"Loaded {len(excel_data)} matches from {division} tab in XLSX file.")
         for _, row in excel_data.iterrows():
             team_1_name = str(row['Team 1 name']).strip() if pd.notna(row['Team 1 name']) else ""
             team_1_score = str(row['Team 1 score']) if pd.notna(row['Team 1 score']) else "-"
@@ -132,29 +141,31 @@ def parse_matches_from_file(file_path: str, division: str) -> list[tuple]:
             if team_1_name and team_2_name:
                 matches.append((team_1_name, team_1_score, team_2_score, team_2_name, cup_name))
     except Exception as e:
-        print(f"Error reading the file for {division}: {e}")
+        # print(f"Error reading the file for {division}: {e}") # Keep this quiet if sheet doesn't exist
+        pass
     return matches
 
-# (wrap_text and get_wrapped_text_block_height functions remain the same)
-
 def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.ImageDraw) -> list[str]:
+    """Wraps text to fit within a maximum pixel width."""
     words = text.split()
     lines = []
     current_line = []
     current_width = 0
-    # Use a space width approximation if the current font is a truetype font
+    # Use a space width approximation
     if hasattr(font, 'getlength'):
         space_width = font.getlength(" ")
     else:
         # Fallback for default font
-        space_width = 8 # A common rough estimate
+        space_width = 8 
     
     for word in words:
         if hasattr(font, 'getlength'):
             word_width = font.getlength(word)
         else:
+             # Use textbbox as a fallback for width calculation
              word_width = draw.textbbox((0, 0), word, font=font)[2] - draw.textbbox((0, 0), word, font=font)[0]
              
+        # Check if adding the word to the current line exceeds max_width
         if current_line and current_width + word_width + space_width <= max_width:
             current_line.append(word)
             current_width += word_width + space_width
@@ -162,7 +173,9 @@ def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: Ima
             current_line.append(word)
             current_width = word_width
         else:
-            lines.append(" ".join(current_line))
+            # Word is too wide or doesn't fit, start a new line
+            if current_line:
+                lines.append(" ".join(current_line))
             current_line = [word]
             current_width = word_width
             
@@ -171,35 +184,43 @@ def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: Ima
     return lines
 
 def get_wrapped_text_block_height(lines: list[str], font: ImageFont.FreeTypeFont, line_spacing: int, draw: ImageDraw.ImageDraw) -> int:
+    """Calculates the total vertical space needed for a block of wrapped text."""
     if not lines:
         return 0
     total_height = 0
     for i, line in enumerate(lines):
+        # Calculate actual line height using textbbox
         line_bbox = draw.textbbox((0, 0), line, font=font)
         line_actual_height = line_bbox[3] - line_bbox[1]
+        
         total_height += line_actual_height
         if i < len(lines) - 1:
-            total_height += line_spacing
+            total_height += line_spacing # Add spacing between lines
     return total_height
 
 def calculate_division_height(division_name: str, matches: list, is_first_division: bool = True) -> int:
     """Calculate the height required for a division or cup group."""
     division_height = 0
     
-    # 1. Add extra spacing *before* the division if it is NOT the first division on the graphic
+    # 1. Spacing BEFORE the division section
     if not is_first_division:
-        division_height += FIXTURE_SPACING # 15px spacing between sections (division/cup)
+        division_height += FIXTURE_SPACING # 15px spacing between sections
         
-    # 2. Add space for the Heading
+    # 2. Height for the Heading
     division_height += HEADING_SPACE
     
     last_cup_name = None
+    
     for j, match in enumerate(matches):
         fixture_height_with_buffers = BOX_HEIGHT
         
-        # 3. Add spacing *before* the fixture box, but only if it's not the first fixture
-        # (The first fixture follows the heading/cup name immediately)
-        if j > 0:
+        # 3. Spacing BEFORE the fixture
+        # (Only if it's not the first fixture *after* the heading/cup name)
+        is_first_in_section = j == 0
+        if division_name.lower().startswith("cup") and match[4] and match[4] != last_cup_name and j > 0:
+            # If we're starting a new cup group, the spacing is already included in CUP_NAME_SPACE
+            pass
+        elif not is_first_in_section:
             fixture_height_with_buffers += FIXTURE_SPACING
             
         # 4. Check for Cup Name space
@@ -207,10 +228,13 @@ def calculate_division_height(division_name: str, matches: list, is_first_divisi
         if division_name.lower().startswith("cup") and cup_name and cup_name != last_cup_name:
             fixture_height_with_buffers += CUP_NAME_SPACE
             last_cup_name = cup_name
-            # If a new cup name is drawn, the *next* fixture (if it exists) will be the first 
-            # after the cup name block, so we *don't* add FIXTURE_SPACING between them.
-            # We compensate for this logic in the draw function.
-        
+            
+            # Since CUP_NAME_SPACE includes a bottom buffer, we need to ensure we don't double-space.
+            # If this is the start of a cup section, remove the FIXTURE_SPACING we might have added above
+            # This logic is complex, so we ensure the space is added *once*.
+            if not is_first_in_section:
+                fixture_height_with_buffers -= FIXTURE_SPACING 
+                
         division_height += fixture_height_with_buffers
     
     return division_height
@@ -225,7 +249,7 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     img = template.copy()
     d = ImageDraw.Draw(img)
 
-    # 🛑 FONT FIX APPLIED HERE
+    # 🛑 FONT FIX START: Loading and Verification
     if not os.path.exists(FONT_PATH):
         print(f"FATAL ERROR: Configured FONT_PATH does not exist: {FONT_PATH}")
         print("Please ensure the path is correct or the font is installed.")
@@ -237,21 +261,23 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
         heading_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
         cup_name_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_CUP_NAME)
         small_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_SMALL_TEAM_NAME)
-        date_font = ImageFont.truetype(FONT_PATH, int(FONT_SIZE_DATE * HIGH_RES_SCALE)) # Initial date font check
+        date_font = ImageFont.truetype(FONT_PATH, int(FONT_SIZE_DATE * HIGH_RES_SCALE))
     except IOError as e:
         print(f"FATAL ERROR: PIL failed to load font from {FONT_PATH}. Error: {e}")
         print("The font file may be corrupted or incompatible with Pillow.")
         return 
-    # 🛑 END FONT FIX
+    # 🛑 FONT FIX END
 
     # --- Date Circle Generation ---
     high_res_size = DATE_CIRCLE_SIZE * HIGH_RES_SCALE
     circle_img = Image.new("RGBA", (high_res_size, high_res_size), (0, 0, 0, 0))
     circle_draw = ImageDraw.Draw(circle_img)
     
-    # ... (Date text calculation logic remains the same) ...
-
-    # Draw the circle (uses date_font defined above)
+    day_text = current_date.strftime("%d")
+    month_text = current_date.strftime("%b").upper()
+    year_text = current_date.strftime("%Y")
+    
+    # Calculate optimal date font size
     font_size = FONT_SIZE_DATE
     while font_size >= FONT_SIZE_DATE_MIN:
         date_font = ImageFont.truetype(FONT_PATH, int(font_size * HIGH_RES_SCALE))
@@ -273,10 +299,7 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
         
         font_size -= 2
     
-    if font_size < FONT_SIZE_DATE_MIN:
-        print(f"Warning: Font size reduced to {FONT_SIZE_DATE_MIN} for date text to fit in circle.")
-
-    # Draw the circle and text (using the calculated date_font)
+    # Draw the circle (using the calculated date_font)
     circle_draw.ellipse(
         [0, 0, high_res_size, high_res_size],
         fill=(255, 255, 255, 255),
@@ -284,15 +307,19 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
         width=DATE_CIRCLE_STROKE * HIGH_RES_SCALE
     )
     
-    day_y = circle_center_y - total_text_height // 2
+    # Calculate vertical positions for centered text
+    # 5 * HIGH_RES_SCALE is the spacing between lines
+    text_height_half = (day_height + month_height + year_height + 10 * HIGH_RES_SCALE) // 2
+    day_y = DATE_CENTER_Y - text_height_half
     month_y = day_y + day_height + 5 * HIGH_RES_SCALE
     year_y = month_y + month_height + 5 * HIGH_RES_SCALE
     
-    circle_draw.text((circle_center_x - (day_bbox[2] - day_bbox[0]) // 2, day_y), day_text, fill=(0, 0, 0, 255), font=date_font)
-    circle_draw.text((circle_center_x - (month_bbox[2] - month_bbox[0]) // 2, month_y), month_text, fill=(0, 0, 0, 255), font=date_font)
-    circle_draw.text((circle_center_x - (year_bbox[2] - year_bbox[0]) // 2, year_y), year_text, fill=(0, 0, 0, 255), font=date_font)
+    circle_draw.text((DATE_CENTER_X - (day_bbox[2] - day_bbox[0]) // 2, day_y), day_text, fill=(0, 0, 0, 255), font=date_font)
+    circle_draw.text((DATE_CENTER_X - (month_bbox[2] - month_bbox[0]) // 2, month_y), month_text, fill=(0, 0, 0, 255), font=date_font)
+    circle_draw.text((DATE_CENTER_X - (year_bbox[2] - year_bbox[0]) // 2, year_y), year_text, fill=(0, 0, 0, 255), font=date_font)
     
-    circle_img = circle_img.resize((DATE_CIRCLE_SIZE, DATE_CIRCLE_SIZE), ImageResampling.LANCZOS)
+    # 🛑 FIX: Changed ImageResampling.LANCZOS to Image.LANCZOS
+    circle_img = circle_img.resize((DATE_CIRCLE_SIZE, DATE_CIRCLE_SIZE), Image.LANCZOS)
     img.paste(circle_img, (DATE_CIRCLE_X, DATE_CIRCLE_Y), circle_img)
 
     # --- Draw Matches ---
@@ -310,9 +337,15 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
         # 2. Draw Division/Cup Heading
         heading = "Cup" if division_name.lower().startswith("cup") else division_name
         
+        # Calculate text position (Centered horizontally)
+        heading_bbox = d.textbbox((0, 0), heading, font=heading_font)
+        heading_width = heading_bbox[2] - heading_bbox[0]
+        heading_text_height = heading_bbox[3] - heading_bbox[1]
+        heading_x = (IMAGE_WIDTH - heading_width) // 2
+        
         # Draw heading text (y_offset + 20 is the start of the text block)
-        heading_x = (IMAGE_WIDTH - (heading_font.getbbox(heading)[2] - heading_font.getbbox(heading)[0])) // 2
-        d.text((heading_x, y_offset + 20), heading, fill=(255, 255, 255), font=heading_font)
+        heading_text_y = y_offset + 20 + (HEADING_TEXT_HEIGHT - heading_text_height) / 2
+        d.text((heading_x, heading_text_y), heading, fill=(255, 255, 255), font=heading_font)
         
         # Advance y_offset past the heading and its top/bottom buffer
         y_offset += HEADING_SPACE 
@@ -326,24 +359,27 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
             # 3. Draw Cup Name (if applicable and different from the last one)
             if division_name.lower().startswith("cup") and cup_name and cup_name != last_cup_name:
                 
-                # Draw cup name text (y_offset + 5 is the start of the text block)
+                # Calculate text position (Left-aligned)
                 cup_name_x = LEFT_PADDING
-                d.text((cup_name_x, y_offset + 5), cup_name, fill=(255, 255, 0), font=cup_name_font)
+                cup_name_bbox = d.textbbox((0, 0), cup_name, font=cup_name_font)
+                cup_name_text_height = cup_name_bbox[3] - cup_name_bbox[1]
+                
+                # Draw cup name text (y_offset + 5 is the start of the text block)
+                cup_name_text_y = y_offset + 5 + (CUP_NAME_TEXT_HEIGHT - cup_name_text_height) / 2
+                d.text((cup_name_x, cup_name_text_y), cup_name, fill=(255, 255, 0), font=cup_name_font)
                 
                 # Advance y_offset past the cup name block
                 y_offset += CUP_NAME_SPACE 
                 last_cup_name = cup_name
-                is_first_fixture_in_division = True
+                is_first_fixture_in_division = True # Reset for fixture spacing
 
-            # 4. Add spacing between fixtures (unless it's the very first fixture or the first after a cup name)
+            # 4. Add spacing between fixtures
             if not is_first_fixture_in_division:
                 y_offset += FIXTURE_SPACING
 
             # 5. Draw Fixture Box and Content
             logo_1 = get_logo(team_1_name, logos_folder)
             logo_2 = get_logo(team_2_name, logos_folder)
-            
-            # Draw logos, boxes, and text using y_offset as the top coordinate of the BOX_HEIGHT block
             
             # ... (Team 1 Logic) ...
             logo_1_x = LEFT_PADDING + 1
@@ -362,9 +398,10 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
             for line in team_1_lines:
                 line_bbox = d.textbbox((0, 0), line, font=team_1_font)
                 line_width = line_bbox[2] - line_bbox[0]
+                line_height = line_bbox[3] - line_bbox[1]
                 line_x = team_1_box_x + (TEAM_BOX_WIDTH - line_width) // 2
                 d.text((line_x, current_line_y_team1), line, fill=(255, 255, 255), font=team_1_font)
-                current_line_y_team1 += (line_bbox[3] - line_bbox[1]) + LINE_SPACING
+                current_line_y_team1 += line_height + LINE_SPACING
 
             # ... (vs Logic) ...
             vs_box_x = team_1_box_x + TEAM_BOX_WIDTH + 5
@@ -391,9 +428,10 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
             for line in team_2_lines:
                 line_bbox = d.textbbox((0, 0), line, font=team_2_font)
                 line_width = line_bbox[2] - line_bbox[0]
+                line_height = line_bbox[3] - line_bbox[1]
                 line_x = team_2_box_x + (TEAM_BOX_WIDTH - line_width) // 2
                 d.text((line_x, current_line_y_team2), line, fill=(255, 255, 255), font=team_2_font)
-                current_line_y_team2 += (line_bbox[3] - line_bbox[1]) + LINE_SPACING
+                current_line_y_team2 += line_height + LINE_SPACING
 
             logo_2_x = team_2_box_x + TEAM_BOX_WIDTH + 2
             img.paste(logo_2, (logo_2_x, int(y_offset) + 1), logo_2)
@@ -410,14 +448,14 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     output_file_path = os.path.join(save_folder, f"Fixtures_Part{part_number}_{current_time}.png")
     img.save(output_file_path)
     print(f"Graphic saved to: {output_file_path}")
-    img.show()
+    # img.show() # Uncomment if you want the image to pop up immediately
 
 
 def generate_fixtures_graphics(file_path: str, logos_folder: str, save_folder: str, template_path: str):
     """
     Main function to generate fixture graphics, separating cup and league matches.
     """
-    # ... (Date loading logic remains the same) ...
+    # --- 1. Load Date ---
     try:
         date_df = pd.read_excel(file_path, sheet_name='Date')
         if not date_df.empty and 'Date' in date_df.columns:
@@ -442,7 +480,8 @@ def generate_fixtures_graphics(file_path: str, logos_folder: str, save_folder: s
             cup_name = match[4] if match[4] else "Unknown Cup"
             cup_groups[cup_name].append(match)
     
-    sorted_cup_groups = sorted(cup_groups.items(), key=lambda x: x[0] != "Hampshire Trophy Cup")
+    # Sort cup groups (Hampshire Trophy Cup first, then alphabetical)
+    sorted_cup_groups = sorted(cup_groups.items(), key=lambda x: (x[0] != "Hampshire Trophy Cup", x[0]))
     
     all_sections = []
     # Add sorted cup divisions
@@ -476,23 +515,19 @@ def generate_fixtures_graphics(file_path: str, logos_folder: str, save_folder: s
         
         division_height = calculate_division_height(calc_div_name, matches, is_first_division_of_graphic)
         
-        print(f"Checking {division_name}: Height needed: {division_height}px, Current used: {current_height}px")
-
         if current_height + division_height <= SAFE_CONTENT_HEIGHT_LIMIT or not current_graphic:
             # It fits, or it's the first section of a new graphic
             current_graphic.append((calc_div_name, matches))
             current_height += division_height
             is_first_division_of_graphic = False
-            print(f" -> Added. New height: {current_height}px")
         else:
-            # Doesn't fit, start a new graphic
+            # Doesn't fit, finalize the current graphic and start a new one
             final_graphics_sections.append(current_graphic)
             
             # Start a new graphic with the current section
             current_graphic = [(calc_div_name, matches)]
             current_height = division_height
             is_first_division_of_graphic = False
-            print(f" -> Didn't fit. Starting new graphic with this section. New height: {current_height}px")
             
     # Add the last graphic
     if current_graphic:
