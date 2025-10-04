@@ -81,28 +81,46 @@ def get_logo(team_name: str, logos_folder: str) -> Image.Image:
     team_name_lower = team_name.strip().lower()
     
     logo_filename = None
+    # 1. Check Special Mapping (Case-insensitive matching)
     for variant_key, filename in SPECIAL_LOGO_MAPPING.items():
         if variant_key in team_name_lower:
             logo_filename = filename
             break
 
+    # 2. Prepare search names based on team name
     search_names = [logo_filename] if logo_filename else [f'{team_name_lower}.png', f'{team_name_lower}.jpg']
     
     if not logo_filename:
+        # Create search names without spaces
         base_name = team_name.strip().replace(' ', '')
         search_names.extend([f'{base_name}.png', f'{base_name}.jpg', f'{base_name.replace("united", "utd")}.png'])
     
     
+    # 3. Search paths
+    paths_tried = []
     for name in search_names:
         for subfolder in ['Current Teams', 'Old Teams', '']:
+            # IMPORTANT: The logo filenames inside the subfolders MUST match the case
+            # used in the 'name' variable if that's what is being searched for.
             search_path = os.path.join(logos_folder, subfolder, name)
+            paths_tried.append(search_path)
             if os.path.exists(search_path) and search_path.lower().endswith(valid_extensions):
                 try:
                     img = Image.open(search_path).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
+                    # print(f"DEBUG: Found logo for {team_name} at: {search_path}") # Success confirmation
                     return img
                 except Exception as e:
                     print(f"Error loading logo for {team_name} from '{search_path}': {e}")
                 
+    # 4. Fallback (If no logo found)
+    # 🛑 CRITICAL DEBUGGING OUTPUT ADDED HERE 🛑
+    if team_name_lower not in [k.lower() for k in SPECIAL_LOGO_MAPPING.keys()]:
+        # Print the exact names and paths it searched for if a logo wasn't found
+        print(f"Error: Could not find logo for team '{team_name.strip()}' (normalized: '{team_name_lower}').")
+        print(f"   Names searched: {search_names}")
+        # Only print the paths if necessary, as the list can be long
+        # print(f"   Paths attempted: {paths_tried}")
+    
     generic_logo_path = os.path.join(logos_folder, 'genericlogo.png')
     try:
         return Image.open(generic_logo_path).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
@@ -176,7 +194,6 @@ def get_wrapped_text_block_height(lines: list[str], font: ImageFont.FreeTypeFont
 def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, save_folder: str, division_name: str, current_date: datetime):
     """
     Creates a league table graphic for a specific division with a date circle.
-    (Function body remains the same as previous corrected version)
     """
     template_filename = DIVISION_TEMPLATES.get(division_name, "division_1_league_template.png")
     template_path = os.path.join(TEMPLATES_FOLDER, template_filename)
