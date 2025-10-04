@@ -3,12 +3,11 @@ from PIL import Image, ImageDraw, ImageFont
 import pandas as pd
 from datetime import datetime
 
-# --- Deployment Environment Setup ---
+# --- Configuration Constants ---
 # Use os.path.dirname(__file__) to get the directory where the script is running
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- Configuration Constants ---
-# NOTE: This path is set dynamically later in the main function based on file discovery.
+# Paths
 LEAGUE_TABLE_FILE_PATH = os.path.join(BASE_DIR, "table.xlsx") 
 LOGOS_FOLDER = os.path.join(BASE_DIR, "Logos")
 SAVE_FOLDER = os.path.join(BASE_DIR, "Graphics")
@@ -64,69 +63,139 @@ DIVISION_TEMPLATES = {
     "Division 4": "division_4_league_template.png",
 }
 
-# Special Team Logo Mappings
+# Special Team Logo Mappings (Maps variant key to the actual logo filename)
 SPECIAL_LOGO_MAPPING = {
     "afc aldermaston a": "AFC Aldermaston.png",
     "afc aldermaston b": "AFC Aldermaston.png",
     "eversley & california sunday": "Eversley & California.png",
 }
 
+# Global logo lookup map
+LOGO_LOOKUP_MAP = {}
+LOGO_LOOKUP_INITIALIZED = False
+
 # --- Helper Functions ---
+def normalize_name(name: str) -> str:
+    """Normalizes a team or filename by converting to lower, removing spaces, and replacing common variants."""
+    name = name.strip().lower()
+    name = name.replace(" ", "")
+    name = name.replace("united", "utd")
+    name = name.replace("&", "and")
+    return name.split('.')[0] # Remove file extension
+
+def build_logo_lookup(logos_folder: str):
+    """
+    Scans the Logos folder and subfolders to build a case/space-insensitive lookup map.
+    Key: Normalized team name from the table (e.g., 'republicofchineham')
+    Value: Full path to the actual logo file (e.g., '/.../Logos/Current Teams/Republic of Chineham.png')
+    """
+    global LOGO_LOOKUP_MAP, LOGO_LOOKUP_INITIALIZED
+    if LOGO_LOOKUP_INITIALIZED:
+        return
+
+    LOGO_LOOKUP_MAP = {}
+    valid_extensions = ('.png', '.jpg', '.jpeg')
+    search_dirs = [logos_folder]
+    # Check for Current Teams and Old Teams subfolders
+    for subfolder in ['Current Teams', 'Old Teams']:
+        sub_path = os.path.join(logos_folder, subfolder)
+        if os.path.isdir(sub_path):
+            search_dirs.append(sub_path)
+
+    for current_dir in search_dirs:
+        try:
+            for filename in os.listdir(current_dir):
+                if filename.lower().endswith(valid_extensions):
+                    # For lookup key, normalize the base filename (without extension)
+                    base_name, ext = os.path.splitext(filename)
+                    key = normalize_name(base_name)
+                    
+                    # For value, store the exact full path
+                    full_path = os.path.join(current_dir, filename)
+                    
+                    # Store the key-value pair
+                    if key not in LOGO_LOOKUP_MAP:
+                        LOGO_LOOKUP_MAP[key] = full_path
+        except FileNotFoundError:
+            # This happens if LOGOS_FOLDER itself is missing, handled by caller
+            pass
+        except Exception as e:
+            print(f"Error scanning logo directory {current_dir}: {e}")
+
+    # Add special mappings to the lookup, keyed by their normalized input name
+    for variant_key, actual_filename in SPECIAL_LOGO_MAPPING.items():
+        # This part requires searching the disk again based on the specific filename
+        key = normalize_name(variant_key)
+        
+        # Search for the mapped filename in subfolders
+        for subfolder in ['Current Teams', 'Old Teams', '']:
+            search_path = os.path.join(logos_folder, subfolder, actual_filename)
+            if os.path.exists(search_path):
+                if key not in LOGO_LOOKUP_MAP:
+                    LOGO_LOOKUP_MAP[key] = search_path
+                break
+    
+    LOGO_LOOKUP_INITIALIZED = True
+    print(f"DEBUG: Logo lookup map built with {len(LOGO_LOOKUP_MAP)} unique logos.")
+
+
 def get_logo(team_name: str, logos_folder: str) -> Image.Image:
     """
-    Loads a team logo, handling specific variants and searching subfolders.
+    Loads a team logo using the pre-built lookup map for case/space insensitivity.
     Returns a resized PIL Image object.
     """
-    valid_extensions = ('.png', '.jpg', '.jpeg')
+    if not LOGO_LOOKUP_INITIALIZED:
+        build_logo_lookup(logos_folder)
+        if not LOGO_LOOKUP_MAP:
+            print("CRITICAL: Logo folder is empty or not found. Cannot proceed with logo search.")
+
+    # 1. Generate normalized keys for the input team name
     team_name_lower = team_name.strip().lower()
     
-    logo_filename = None
-    # 1. Check Special Mapping (Case-insensitive matching)
-    for variant_key, filename in SPECIAL_LOGO_MAPPING.items():
+    # Check special mappings first (which use full team name variants)
+    logo_path = None
+    for variant_key in SPECIAL_LOGO_MAPPING.keys():
         if variant_key in team_name_lower:
-            logo_filename = filename
-            break
+            key = normalize_name(variant_key)
+            logo_path = LOGO_LOOKUP_MAP.get(key)
+            if logo_path:
+                break
+    
+    # Check standard team name mapping
+    if not logo_path:
+        main_key = normalize_name(team_name)
+        logo_path = LOGO_LOOKUP_MAP.get(main_key)
+    
+    # Check for variations if main key failed
+    if not logo_path:
+        # Check 'united'/'utd' variations
+        if 'utd' in main_key:
+            alt_key = main_key.replace("utd", "united")
+            logo_path = LOGO_LOOKUP_MAP.get(alt_key)
+        elif 'united' in main_key:
+            alt_key = main_key.replace("united", "utd")
+            logo_path = LOGO_LOOKUP_MAP.get(alt_key)
+    
+    # 2. Load and return the found logo
+    if logo_path:
+        try:
+            img = Image.open(logo_path).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
+            return img
+        except Exception as e:
+            print(f"Error loading final logo for {team_name} from '{logo_path}': {e}")
+            
+    # 3. Fallback to generic logo
+    print(f"Error: Could not find specific logo for team '{team_name.strip()}' (normalized: '{normalize_name(team_name)}').")
 
-    # 2. Prepare search names based on team name
-    search_names = [logo_filename] if logo_filename else [f'{team_name_lower}.png', f'{team_name_lower}.jpg']
-    
-    if not logo_filename:
-        # Create search names without spaces
-        base_name = team_name.strip().replace(' ', '')
-        search_names.extend([f'{base_name}.png', f'{base_name}.jpg', f'{base_name.replace("united", "utd")}.png'])
-    
-    
-    # 3. Search paths
-    paths_tried = []
-    for name in search_names:
-        for subfolder in ['Current Teams', 'Old Teams', '']:
-            # IMPORTANT: The logo filenames inside the subfolders MUST match the case
-            # used in the 'name' variable if that's what is being searched for.
-            search_path = os.path.join(logos_folder, subfolder, name)
-            paths_tried.append(search_path)
-            if os.path.exists(search_path) and search_path.lower().endswith(valid_extensions):
-                try:
-                    img = Image.open(search_path).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
-                    # print(f"DEBUG: Found logo for {team_name} at: {search_path}") # Success confirmation
-                    return img
-                except Exception as e:
-                    print(f"Error loading logo for {team_name} from '{search_path}': {e}")
-                
-    # 4. Fallback (If no logo found)
-    # 🛑 CRITICAL DEBUGGING OUTPUT ADDED HERE 🛑
-    if team_name_lower not in [k.lower() for k in SPECIAL_LOGO_MAPPING.keys()]:
-        # Print the exact names and paths it searched for if a logo wasn't found
-        print(f"Error: Could not find logo for team '{team_name.strip()}' (normalized: '{team_name_lower}').")
-        print(f"   Names searched: {search_names}")
-        # Only print the paths if necessary, as the list can be long
-        # print(f"   Paths attempted: {paths_tried}")
-    
     generic_logo_path = os.path.join(logos_folder, 'genericlogo.png')
     try:
-        return Image.open(generic_logo_path).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
+        # Note: Added .resize here as it was missing in your local version
+        return Image.open(generic_logo_path).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS) 
     except Exception as e:
         print(f"Error loading generic logo: {e}. Using gray placeholder.")
         return Image.new("RGBA", (LOGO_SIZE, LOGO_SIZE), (200, 200, 200, 255))
+
+# --- Rest of the code remains the same ---
 
 def parse_league_table_from_file(file_path: str, division: str) -> pd.DataFrame:
     """
@@ -271,7 +340,7 @@ def create_league_table_graphic(league_data: pd.DataFrame, logos_folder: str, sa
 
     # Create table content
     table_content_height = HEADER_TEXT_TOP_PADDING + FONT_SIZE_HEADER + (len(league_data) * ROW_HEIGHT) + 20
-    table_img = Image.new("RGBA", (IMAGE_WIDTH, int(table_content_height) + TABLE_TOP_OFFSET), (0, 0, 0, 0))
+    table_img = Image.new("RGBA", (IMAGE_WIDTH, int(table_content_height)), (0, 0, 0, 0))
     d = ImageDraw.Draw(table_img)
 
     # Draw column headers
@@ -408,6 +477,9 @@ def generate_league_table_graphics(file_path: str, logos_folder: str, save_folde
     print("--- DEBUGGING FILE PATH END ---\n")
     # ----------------------------------------------------
     
+    # Initialize the logo lookup map before processing any data
+    build_logo_lookup(LOGOS_FOLDER)
+
     current_date = datetime.now()
     try:
         # Check file existence again using the resolved path
