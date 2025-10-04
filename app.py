@@ -9,8 +9,9 @@ import zipfile
 
 # --- Configuration for Git Repository Files ---
 GIT_FILES_TO_COPY = [
-    "results.xlsx",
     "table.xlsx",
+    "results.xlsx",
+    "match of the day.xlsx",
     "Fixtures - automated.py",
     "match of the day - automated.py",
     "Results - automated.py",
@@ -21,40 +22,32 @@ GIT_DIRS_TO_COPY = [
     "Logos",
     "Templates",
 ]
-# ----------------------------------------------
 
+# ----------------------------------------------
 # Streamlit GUI
 st.title("⚽ Football Graphics Generator")
 st.write("Using files and scripts directly from the deployed GitHub repository.")
 
 # --- File Setup Block: Copies Files from Git Repo to Tmp Folder ---
-
-# Create and clean the project directory
 project_dir = os.path.join("tmp", "project")
 if os.path.exists(project_dir):
     shutil.rmtree(project_dir)
 os.makedirs(project_dir, exist_ok=True)
-
-repo_root = os.getcwd() 
+repo_root = os.getcwd()
 
 # Copy individual files
 all_files_present = True
 for item in GIT_FILES_TO_COPY:
     source_path = os.path.join(repo_root, item)
     dest_path = os.path.join(project_dir, item)
-    
     if os.path.exists(source_path):
         shutil.copy2(source_path, dest_path)
-        
-        # --- CRITICAL FIX: SET FILE PERMISSIONS for font ---
+        # Set file permissions for font
         if item.endswith((".ttf", ".otf")):
-            # Set the file permission to be globally readable (0o777 grants max access)
             try:
                 os.chmod(dest_path, 0o777)
             except Exception as e:
                 st.warning(f"Warning: Could not set permissions for font file. {e}")
-        # --------------------------------------------------
-        
     else:
         st.error(f"FATAL ERROR: Required file not found in Git repository: {item}")
         all_files_present = False
@@ -74,17 +67,51 @@ if not all_files_present:
 else:
     st.success("Project files loaded successfully from the Git repository.")
 
-# --- Continue with the rest of the logic ---
+# --- Excel File Editor ---
+st.subheader("Edit Excel Files")
+# Find all .xlsx files in the project directory
+xlsx_files = [f for f in os.listdir(project_dir) if f.endswith('.xlsx')]
+if not xlsx_files:
+    st.warning("No Excel files found in the project directory.")
+else:
+    selected_xlsx = st.selectbox("Select Excel File to Edit", xlsx_files)
+    if selected_xlsx:
+        xlsx_path = os.path.join(project_dir, selected_xlsx)
+        try:
+            # Read all sheets from the selected Excel file
+            xlsx_data = pd.read_excel(xlsx_path, sheet_name=None)
+            sheet_names = list(xlsx_data.keys())
+            selected_sheet = st.selectbox(f"Select Sheet from {selected_xlsx}", sheet_names)
+            
+            # Display and edit the selected sheet
+            df = xlsx_data[selected_sheet]
+            st.write(f"Editing {selected_sheet} from {selected_xlsx}")
+            edited_df = st.data_editor(
+                df,
+                num_rows="dynamic",  # Allow adding/deleting rows
+                key=f"editor_{selected_xlsx}_{selected_sheet}"
+            )
+            
+            # Save changes button
+            if st.button(f"Save Changes to {selected_xlsx}"):
+                try:
+                    # Update the selected sheet in the Excel file
+                    with pd.ExcelWriter(xlsx_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                        for sheet_name, data in xlsx_data.items():
+                            if sheet_name == selected_sheet:
+                                edited_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                            else:
+                                data.to_excel(writer, sheet_name=sheet_name, index=False)
+                    st.success(f"Changes saved to {selected_xlsx} ({selected_sheet})")
+                except Exception as e:
+                    st.error(f"Error saving changes: {e}")
+        except Exception as e:
+            st.error(f"Error loading {selected_xlsx}: {e}")
 
-if not os.path.exists(os.path.join(project_dir, "results.xlsx")):
-    st.error("Error: results.xlsx not found in project folder!")
-    st.stop()
-
+# --- Graphic Generation ---
 graphics_dir = os.path.join(project_dir, "Graphics")
 os.makedirs(graphics_dir, exist_ok=True)
-
 mode = st.selectbox("Select Graphic Type", ["Fixtures", "Match of the Day", "Results", "Table"])
-
 script_map = {
     "Fixtures": "Fixtures - automated.py",
     "Match of the Day": "match of the day - automated.py",
@@ -100,19 +127,12 @@ if not os.path.exists(script_path_in_project):
 
 if st.button(f"Generate {mode} Graphics"):
     with st.spinner(f"Generating {mode} graphics..."):
-        
-        # --- CRITICAL FIX: Change CWD to the project folder ---
         original_cwd = os.getcwd()
-        os.chdir(project_dir) # Change CWD to the folder containing the font and excel file
-        
+        os.chdir(project_dir)  # Change to tmp/project
         try:
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
-            
-            # --- FINAL FIX: Use the simple filename (selected_script)
-            # This avoids the duplicated path error since CWD is already set to project_dir
             result = subprocess.run([sys.executable, selected_script], capture_output=True, text=True, env=env)
-            
             st.write("**Console Output:**")
             st.code(result.stdout)
             if result.stderr:
@@ -122,14 +142,11 @@ if st.button(f"Generate {mode} Graphics"):
         except Exception as e:
             st.error(f"Error running script: {e}")
         finally:
-            # IMPORTANT: Change the working directory back
             os.chdir(original_cwd)
-            
-    # Provide download links for generated PNGs and ZIP (unchanged logic)
+    
+    # Provide download links for generated PNGs and ZIP
     if os.path.exists(graphics_dir):
-        # We must use the full path to graphics_dir here as CWD is back to original
         png_files = glob.glob(os.path.join(graphics_dir, "*.png"))
-        
         if png_files:
             st.write("**Download Generated Graphics:**")
             for png in png_files:
