@@ -13,13 +13,12 @@ GIT_FILES_TO_COPY = [
     "match of the day - automated.py",
     "Results - automated.py",
     "table - automated.py",
-    "BebasNeue Regular.ttf", # Keep original name for consistency
+    "BebasNeue Regular.ttf",
 ]
 GIT_DIRS_TO_COPY = [
     "Logos",
     "Templates",
 ]
-# We will use the original name and rely on CWD change, so NO RENAME is needed
 # ----------------------------------------------
 
 # Streamlit GUI
@@ -44,6 +43,17 @@ for item in GIT_FILES_TO_COPY:
     
     if os.path.exists(source_path):
         shutil.copy2(source_path, dest_path)
+        
+        # --- CRITICAL FIX: SET FILE PERMISSIONS ---
+        if item.endswith((".ttf", ".otf")):
+            # Set the file permission to be globally readable (0o777 grants max access)
+            try:
+                os.chmod(dest_path, 0o777)
+            except Exception as e:
+                # This should not fail, but we handle it just in case
+                st.warning(f"Warning: Could not set permissions for font file. {e}")
+        # ------------------------------------------
+        
     else:
         st.error(f"FATAL ERROR: Required file not found in Git repository: {item}")
         all_files_present = False
@@ -63,7 +73,7 @@ if not all_files_present:
 else:
     st.success("Project files loaded successfully from the Git repository.")
 
-# --- Continue with the rest of the logic ---
+# --- Continue with the rest of the logic (CWD is set here) ---
 
 if not os.path.exists(os.path.join(project_dir, "results.xlsx")):
     st.error("Error: results.xlsx not found in project folder!")
@@ -102,7 +112,10 @@ if st.button(f"Generate {mode} Graphics"):
             env["PYTHONIOENCODING"] = "utf-8"
             
             # Run the script using its simple name, as CWD is set correctly
-            result = subprocess.run([sys.executable, selected_script], capture_output=True, text=True, env=env)
+            # Note: We use the full path here because the subprocess is technically started
+            # from the root of the app, even if CWD is changed for the execution environment.
+            # Using the full script path with CWD set is the most reliable combo.
+            result = subprocess.run([sys.executable, script_path_in_project], capture_output=True, text=True, env=env)
             
             st.write("**Console Output:**")
             st.code(result.stdout)
