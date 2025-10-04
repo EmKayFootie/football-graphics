@@ -10,6 +10,7 @@ import zipfile
 # --- Configuration for Git Repository Files ---
 GIT_FILES_TO_COPY = [
     "results.xlsx",
+    "table.xlsx",
     "Fixtures - automated.py",
     "match of the day - automated.py",
     "Results - automated.py",
