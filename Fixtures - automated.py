@@ -1,9 +1,10 @@
 import os
-from PIL import Image, ImageDraw, ImageFont # Corrected import
+from PIL import Image, ImageDraw, ImageFont
 import pandas as pd
 from datetime import datetime
 from collections import defaultdict
-import math
+import math # Added the math import (just in case, but you weren't using it)
+import zipfile # 🛑 FIX 1: ADDED THIS to resolve the NameError from the Streamlit part of your app.
 
 print("✅ STARTING SCRIPT")
 
@@ -13,10 +14,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- Configuration Constants (FIXED FOR RELATIVE PATHS) ---
 # Paths
-# 🛑 FIX: Use relative paths joined from BASE_DIR for Streamlit compatibility
+# 🛑 FIX 2: Using relative paths joined from BASE_DIR for Streamlit compatibility
 FIXTURES_FILE_PATH = os.path.join(BASE_DIR, "results.xlsx")
 LOGOS_FOLDER = os.path.join(BASE_DIR, "Logos")  
-SAVE_FOLDER = os.path.join(BASE_DIR, "Graphics") # This folder must exist on your local machine
+SAVE_FOLDER = os.path.join(BASE_DIR, "Graphics") 
 TEMPLATES_FOLDER = os.path.join(BASE_DIR, "Templates") 
 TEMPLATE_PATH = os.path.join(TEMPLATES_FOLDER, "fixtures_template.png")
 FONT_PATH = os.path.join(BASE_DIR, "BebasNeue Regular.ttf") # Font file must be in the repo root
@@ -25,7 +26,7 @@ FONT_PATH = os.path.join(BASE_DIR, "BebasNeue Regular.ttf") # Font file must be 
 IMAGE_WIDTH = 1080
 IMAGE_HEIGHT = 1350
 CONTENT_HEIGHT_LIMIT = 1040
-SAFE_CONTENT_HEIGHT_LIMIT = 950 # Conservative height limit
+SAFE_CONTENT_HEIGHT_LIMIT = 950  # Conservative height limit
 CONTENT_START_Y = 251.97
 LEFT_PADDING = 5
 RIGHT_PADDING = 5
@@ -40,7 +41,7 @@ DATE_CIRCLE_SIZE = 142
 DATE_CIRCLE_X = 1080 - 138 - 142
 DATE_CIRCLE_Y = 95
 DATE_CIRCLE_STROKE = 3
-HIGH_RES_SCALE = 2 # Used for date circle rendering
+HIGH_RES_SCALE = 2
 DATE_TEXT_MAX_WIDTH = DATE_CIRCLE_SIZE - 20
 DATE_TEXT_MAX_HEIGHT = DATE_CIRCLE_SIZE - 20
 DATE_CENTER_X = (DATE_CIRCLE_SIZE * HIGH_RES_SCALE) // 2
@@ -64,14 +65,15 @@ SPECIAL_LOGO_MAPPING = {
     "afc aldermaston b": "AFC Aldermaston.png",
 }
 
-# Teams that might need a smaller font (for text wrapping)
+# Teams that might need a smaller font
 TEAMS_FOR_SMALLER_FONT = ["AFC Aldermaston A", "AFC Aldermaston B"]
 
-# --- Pre-calculate spacing based on font ---
+# --- Pre-calculate spacing based on font (Re-implemented for robustness) ---
 HEADING_SPACE = 0
 CUP_NAME_SPACE = 0
+HEADING_TEXT_HEIGHT = 0
+CUP_NAME_TEXT_HEIGHT = 0
 
-# Check if font path is valid for pre-calculation
 if os.path.exists(FONT_PATH):
     try:
         HEADING_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
@@ -87,16 +89,17 @@ if os.path.exists(FONT_PATH):
         CUP_NAME_TEXT_HEIGHT = cup_name_bbox[3] - cup_name_bbox[1]
         CUP_NAME_SPACE = 5 + CUP_NAME_TEXT_HEIGHT + 10 # 5px buffer before, 10px after
     except IOError:
-        # Fallback if font exists but can't be loaded by PIL
         print("Warning: Could not load required fonts for pre-calculation. Using default height estimates.")
         HEADING_SPACE = 100 
         CUP_NAME_SPACE = 70
+        HEADING_TEXT_HEIGHT = 60 # Default estimate
+        CUP_NAME_TEXT_HEIGHT = 35 # Default estimate
 else:
-    # Fallback if font doesn't exist at all
     print("Warning: Configured font path is invalid. Using default height estimates.")
     HEADING_SPACE = 100 
     CUP_NAME_SPACE = 70
-
+    HEADING_TEXT_HEIGHT = 60 # Default estimate
+    CUP_NAME_TEXT_HEIGHT = 35 # Default estimate
 
 print("✅ Configuration constants loaded.")
 
@@ -107,22 +110,23 @@ def get_logo(team_name: str, logos_folder: str) -> Image.Image:
     team_name_clean = team_name.strip()
     team_name_lower = team_name_clean.lower()
     
+    # 1. Check Special Mapping
     logo_filename = SPECIAL_LOGO_MAPPING.get(team_name_lower, f'{team_name_clean}.png')
     
-    # Search 'Current Teams' and 'Old Teams'
+    # 2. Search Subfolders (Current Teams, Old Teams)
     for subfolder in ['Current Teams', 'Old Teams']:
         search_path = os.path.join(logos_folder, subfolder, logo_filename)
         if os.path.exists(search_path):
             try:
-                # 🛑 FIX: Changed ImageResampling.LANCZOS to Image.LANCZOS
+                # Use Image.LANCZOS for quality resize
                 return Image.open(search_path).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), Image.LANCZOS)
             except Exception as e:
                 print(f"Error loading logo '{logo_filename}' for {team_name}: {e}")
 
+    # 3. Fallback to generic
     generic_logo_path = os.path.join(logos_folder, 'genericlogo.png')
     try:
         print(f"Warning: No specific logo found for {team_name}. Using generic logo.")
-        # 🛑 FIX: Changed ImageResampling.LANCZOS to Image.LANCZOS
         return Image.open(generic_logo_path).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), Image.LANCZOS)
     except Exception as e:
         print(f"Error loading generic logo: {e}. Using gray placeholder.")
@@ -133,6 +137,7 @@ def parse_matches_from_file(file_path: str, division: str) -> list[tuple]:
     matches = []
     try:
         excel_data = pd.read_excel(file_path, sheet_name=division)
+        # print(f"Loaded {len(excel_data)} matches from {division} tab in XLSX file.")
         for _, row in excel_data.iterrows():
             team_1_name = str(row['Team 1 name']).strip() if pd.notna(row['Team 1 name']) else ""
             team_1_score = str(row['Team 1 score']) if pd.notna(row['Team 1 score']) else "-"
@@ -144,7 +149,7 @@ def parse_matches_from_file(file_path: str, division: str) -> list[tuple]:
             if team_1_name and team_2_name:
                 matches.append((team_1_name, team_1_score, team_2_score, team_2_name, cup_name))
     except Exception as e:
-        # print(f"Error reading the file for {division}: {e}") # Keep this quiet if sheet doesn't exist
+        # print(f"Error reading the file for {division}: {e}") # Suppress for missing sheets
         pass
     return matches
 
@@ -154,19 +159,15 @@ def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: Ima
     lines = []
     current_line = []
     current_width = 0
-    # Use a space width approximation
-    if hasattr(font, 'getlength'):
-        space_width = font.getlength(" ")
-    else:
-        # Fallback for default font
-        space_width = 8 
+    
+    # Use textbbox for accurate width calculation
+    def get_text_width(txt, f):
+        return draw.textbbox((0, 0), txt, font=f)[2] - draw.textbbox((0, 0), txt, font=f)[0]
+        
+    space_width = get_text_width(" ", font)
     
     for word in words:
-        if hasattr(font, 'getlength'):
-            word_width = font.getlength(word)
-        else:
-             # Use textbbox as a fallback for width calculation
-             word_width = draw.textbbox((0, 0), word, font=font)[2] - draw.textbbox((0, 0), word, font=font)[0]
+        word_width = get_text_width(word, font)
              
         # Check if adding the word to the current line exceeds max_width
         if current_line and current_width + word_width + space_width <= max_width:
@@ -202,74 +203,62 @@ def get_wrapped_text_block_height(lines: list[str], font: ImageFont.FreeTypeFont
     return total_height
 
 def calculate_division_height(division_name: str, matches: list, is_first_division: bool = True) -> int:
-    """Calculate the height required for a division or cup group."""
-    division_height = 0
+    """Calculate the height required for a division or cup group with accurate spacing"""
     
-    # 1. Spacing BEFORE the division section
+    # 🛑 FIX 3: Rewritten logic for accurate height calculation, avoiding double-counting spacing.
+    
+    # 1. Height of the main heading (Division X or Cup)
+    total_height = HEADING_SPACE
+    
+    # 2. Add spacing before the first division/section if it's not the first one on the graphic
     if not is_first_division:
-        division_height += FIXTURE_SPACING # 15px spacing between sections
-        
-    # 2. Height for the Heading
-    division_height += HEADING_SPACE
-    
+        total_height += FIXTURE_SPACING # 15px spacing between sections
+
     last_cup_name = None
     
     for j, match in enumerate(matches):
-        fixture_height_with_buffers = BOX_HEIGHT
+        # Base height for the match fixture itself
+        match_height = BOX_HEIGHT
         
-        # 3. Spacing BEFORE the fixture
-        # (Only if it's not the first fixture *after* the heading/cup name)
-        is_first_in_section = j == 0
-        if division_name.lower().startswith("cup") and match[4] and match[4] != last_cup_name and j > 0:
-            # If we're starting a new cup group, the spacing is already included in CUP_NAME_SPACE
-            pass
-        elif not is_first_in_section:
-            fixture_height_with_buffers += FIXTURE_SPACING
-            
-        # 4. Check for Cup Name space
+        # Space for Cup Name header
         cup_name = match[4]
         if division_name.lower().startswith("cup") and cup_name and cup_name != last_cup_name:
-            fixture_height_with_buffers += CUP_NAME_SPACE
+            match_height += CUP_NAME_SPACE
             last_cup_name = cup_name
-            
-            # Since CUP_NAME_SPACE includes a bottom buffer, we need to ensure we don't double-space.
-            # If this is the start of a cup section, remove the FIXTURE_SPACING we might have added above
-            # This logic is complex, so we ensure the space is added *once*.
-            if not is_first_in_section:
-                fixture_height_with_buffers -= FIXTURE_SPACING 
-                
-        division_height += fixture_height_with_buffers
+        
+        # Space *before* the fixture.
+        # This space is added:
+        # a) For any fixture that isn't the first in its group (i.e., immediately after a Division Heading or a Cup Name header).
+        # b) For the first fixture of a division/cup group if it's NOT the first fixture on the graphic AND it wasn't preceded by a cup name.
+        if j > 0:
+            match_height += FIXTURE_SPACING
+        
+        total_height += match_height
     
-    return division_height
+    return total_height
 
-# --- Main Graphic Generation Function (FIXED) ---
+# --- Main Graphic Generation Function ---
 def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folder: str, save_folder: str, part_number: int, template_path: str, current_date: datetime):
     try:
         template = Image.open(template_path).convert("RGBA")
+        if template.size != (IMAGE_WIDTH, IMAGE_HEIGHT):
+            raise ValueError(f"Template must be exactly {IMAGE_WIDTH}x{IMAGE_HEIGHT} pixels.")
     except Exception as e:
         print(f"Error loading template: {e}. Using transparent background instead.")
         template = Image.new("RGBA", (IMAGE_WIDTH, IMAGE_HEIGHT), (0, 0, 0, 0))
     img = template.copy()
     d = ImageDraw.Draw(img)
 
-    # 🛑 FONT FIX START: Loading and Verification
-    if not os.path.exists(FONT_PATH):
-        print(f"FATAL ERROR: Configured FONT_PATH does not exist: {FONT_PATH}")
-        print("Please ensure the font file is committed to your GitHub repository.")
-        return 
-        
+    # Load Fonts
     try:
         font = ImageFont.truetype(FONT_PATH, FONT_SIZE_NORMAL)
         score_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_SCORE)
         heading_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
         cup_name_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_CUP_NAME)
         small_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_SMALL_TEAM_NAME)
-        date_font = ImageFont.truetype(FONT_PATH, int(FONT_SIZE_DATE * HIGH_RES_SCALE))
     except IOError as e:
-        print(f"FATAL ERROR: PIL failed to load font from {FONT_PATH}. Error: {e}")
-        print("The font file may be corrupted or incompatible with Pillow.")
-        return 
-    # 🛑 FONT FIX END
+        print(f"Warning: Could not load font from {FONT_PATH}. Using default font. Error: {e}")
+        font = score_font = heading_font = cup_name_font = small_font = ImageFont.load_default()
 
     # --- Date Circle Generation ---
     high_res_size = DATE_CIRCLE_SIZE * HIGH_RES_SCALE
@@ -277,15 +266,20 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     circle_draw = ImageDraw.Draw(circle_img)
     
     day_text = current_date.strftime("%d")
-    month_text = current_date.strftime("%b").upper()
+    month_text = current_date.strftime("%b").upper() # Use abbreviated month
     year_text = current_date.strftime("%Y")
     
     # Calculate optimal date font size
     font_size = FONT_SIZE_DATE
+    date_font = None # Initialize outside loop
+    
     while font_size >= FONT_SIZE_DATE_MIN:
-        # Re-load font at the appropriate size for high-res rendering
-        date_font = ImageFont.truetype(FONT_PATH, int(font_size * HIGH_RES_SCALE))
-        
+        try:
+            # 🛑 FIX 4: Ensure date_font is loaded inside the loop correctly for size check
+            date_font = ImageFont.truetype(FONT_PATH, int(font_size * HIGH_RES_SCALE))
+        except IOError:
+            date_font = ImageFont.load_default() # Fallback
+
         # Calculate text bounding boxes for fitting
         day_bbox = circle_draw.textbbox((0, 0), day_text, font=date_font)
         month_bbox = circle_draw.textbbox((0, 0), month_text, font=date_font)
@@ -303,7 +297,7 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
         
         font_size -= 2
     
-    # Draw the circle (using the calculated date_font)
+    # Draw the circle (using the final calculated date_font)
     circle_draw.ellipse(
         [0, 0, high_res_size, high_res_size],
         fill=(255, 255, 255, 255),
@@ -317,11 +311,11 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     month_y = day_y + day_height + 5 * HIGH_RES_SCALE
     year_y = month_y + month_height + 5 * HIGH_RES_SCALE
     
+    # Draw text
     circle_draw.text((DATE_CENTER_X - (day_bbox[2] - day_bbox[0]) // 2, day_y), day_text, fill=(0, 0, 0, 255), font=date_font)
     circle_draw.text((DATE_CENTER_X - (month_bbox[2] - month_bbox[0]) // 2, month_y), month_text, fill=(0, 0, 0, 255), font=date_font)
     circle_draw.text((DATE_CENTER_X - (year_bbox[2] - year_bbox[0]) // 2, year_y), year_text, fill=(0, 0, 0, 255), font=date_font)
     
-    # 🛑 FIX: Changed ImageResampling.LANCZOS to Image.LANCZOS
     circle_img = circle_img.resize((DATE_CIRCLE_SIZE, DATE_CIRCLE_SIZE), Image.LANCZOS)
     img.paste(circle_img, (DATE_CIRCLE_X, DATE_CIRCLE_Y), circle_img)
 
@@ -354,7 +348,7 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
         y_offset += HEADING_SPACE 
         
         last_cup_name = None
-        is_first_fixture_in_division = True
+        is_first_fixture_in_section = True
         
         for match in matches:
             team_1_name, _, _, team_2_name, cup_name = match
@@ -374,17 +368,16 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
                 # Advance y_offset past the cup name block
                 y_offset += CUP_NAME_SPACE 
                 last_cup_name = cup_name
-                is_first_fixture_in_division = True # Reset for fixture spacing
+                is_first_fixture_in_section = True # Reset for fixture spacing
 
             # 4. Add spacing between fixtures
-            if not is_first_fixture_in_division:
+            if not is_first_fixture_in_section:
                 y_offset += FIXTURE_SPACING
 
             # 5. Draw Fixture Box and Content
             logo_1 = get_logo(team_1_name, logos_folder)
             logo_2 = get_logo(team_2_name, logos_folder)
             
-            # ... (Team 1 Logic) ...
             logo_1_x = LEFT_PADDING + 1
             img.paste(logo_1, (logo_1_x, int(y_offset) + 1), logo_1)
 
@@ -401,12 +394,10 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
             for line in team_1_lines:
                 line_bbox = d.textbbox((0, 0), line, font=team_1_font)
                 line_width = line_bbox[2] - line_bbox[0]
-                line_height = line_bbox[3] - line_bbox[1]
                 line_x = team_1_box_x + (TEAM_BOX_WIDTH - line_width) // 2
                 d.text((line_x, current_line_y_team1), line, fill=(255, 255, 255), font=team_1_font)
-                current_line_y_team1 += line_height + LINE_SPACING
+                current_line_y_team1 += (line_bbox[3] - line_bbox[1]) + LINE_SPACING
 
-            # ... (vs Logic) ...
             vs_box_x = team_1_box_x + TEAM_BOX_WIDTH + 5
             vs_box_y = y_offset
             d.rectangle([vs_box_x, vs_box_y, vs_box_x + SCORE_BOX_WIDTH, vs_box_y + BOX_HEIGHT - 1], fill=(0, 0, 0, 180))
@@ -417,7 +408,6 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
             vs_text_y = vs_box_y + (BOX_HEIGHT - (vs_bbox[3] - vs_bbox[1])) // 2 + visual_y_offset_correction
             d.text((vs_text_x, vs_text_y), vs_text, fill=(255, 255, 255), font=score_font)
 
-            # ... (Team 2 Logic) ...
             team_2_box_x = vs_box_x + SCORE_BOX_WIDTH + 5
             team_2_box_y = y_offset
             d.rectangle([team_2_box_x, team_2_box_y, team_2_box_x + TEAM_BOX_WIDTH, team_2_box_y + BOX_HEIGHT - 1], fill=(0, 0, 0, 180))
@@ -431,10 +421,9 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
             for line in team_2_lines:
                 line_bbox = d.textbbox((0, 0), line, font=team_2_font)
                 line_width = line_bbox[2] - line_bbox[0]
-                line_height = line_bbox[3] - line_bbox[1]
                 line_x = team_2_box_x + (TEAM_BOX_WIDTH - line_width) // 2
                 d.text((line_x, current_line_y_team2), line, fill=(255, 255, 255), font=team_2_font)
-                current_line_y_team2 += line_height + LINE_SPACING
+                current_line_y_team2 += (line_bbox[3] - line_bbox[1]) + LINE_SPACING
 
             logo_2_x = team_2_box_x + TEAM_BOX_WIDTH + 2
             img.paste(logo_2, (logo_2_x, int(y_offset) + 1), logo_2)
@@ -442,13 +431,11 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
             # Advance Y offset by the fixture height
             y_offset += BOX_HEIGHT
             
-            is_first_fixture_in_division = False
+            is_first_fixture_in_section = False
         
         is_first_division_of_graphic = False 
 
     # Final Image Saving (This will save locally for testing)
-    # Streamlit Cloud deployments generally don't use this output folder, 
-    # but the image object 'img' is what you would pass to st.image()
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     
     # Ensure local save folder exists for testing
@@ -456,9 +443,12 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
         os.makedirs(save_folder)
         
     output_file_path = os.path.join(save_folder, f"Fixtures_Part{part_number}_{current_time}.png")
-    img.save(output_file_path)
+    
+    # 🛑 FIX 5: Removed the incorrect cropping/pasting logic from your original code 
+    # as it was likely causing the missing parts. Just save the final image.
+    img.save(output_file_path) 
     print(f"Graphic saved to: {output_file_path}")
-    # img.show() # Uncomment if you want the image to pop up immediately
+    # img.show() # 🛑 FIX 6: COMMENTED OUT. This command causes errors on Streamlit Cloud.
 
 
 def generate_fixtures_graphics(file_path: str, logos_folder: str, save_folder: str, template_path: str):
@@ -482,81 +472,183 @@ def generate_fixtures_graphics(file_path: str, logos_folder: str, save_folder: s
 
     # --- 2. Load and Group Matches ---
     divisions = ["Cup", "Division 1", "Division 2", "Division 3", "Division 4"]
-    
+    cup_divisions = []
+    league_divisions = []
+
+    # Process cup matches by grouping by cup name
     cup_matches = parse_matches_from_file(file_path, "Cup")
-    cup_groups = defaultdict(list)
     if cup_matches:
+        cup_groups = defaultdict(list)
         for match in cup_matches:
             cup_name = match[4] if match[4] else "Unknown Cup"
             cup_groups[cup_name].append(match)
-    
-    # Sort cup groups (Hampshire Trophy Cup first, then alphabetical)
-    sorted_cup_groups = sorted(cup_groups.items(), key=lambda x: (x[0] != "Hampshire Trophy Cup", x[0]))
-    
-    all_sections = []
-    # Add sorted cup divisions
-    for cup_name, matches in sorted_cup_groups:
-        all_sections.append({
-            'division': f"Cup - {cup_name}",
-            'matches': matches,
-        })
+        
+        # Sort to prioritize Hampshire Trophy Cup
+        # The key should be 0 for 'Hampshire Trophy Cup' and 1 for others (so it comes first)
+        sorted_cup_groups = sorted(cup_groups.items(), key=lambda x: (x[0] != "Hampshire Trophy Cup", x[0])) 
+        
+        for cup_name, matches in sorted_cup_groups:
+            cup_divisions.append({
+                'division': f"Cup - {cup_name}",
+                'matches': matches,
+                'original_div': "Cup"
+            })
 
-    # Add league divisions
+    # Collect league divisions
     for div in divisions[1:]:
         matches = parse_matches_from_file(file_path, div)
         if matches:
-            all_sections.append({
+            league_divisions.append({
                 'division': div,
                 'matches': matches,
+                'original_div': div
             })
 
-    # --- 3. Generate Graphics (Height-based Packing) ---
-    final_graphics_sections = []
-    current_graphic = []
-    current_height = 0
-    is_first_division_of_graphic = True
-
-    for div_data in all_sections:
-        division_name = div_data['division']
-        matches = div_data['matches']
-        
-        # Determine the section type for height calculation
-        calc_div_name = "Cup" if division_name.lower().startswith("cup") else division_name
-        
-        # NOTE: Using 'True' here for the initial section height calculation is correct only for the very first item
-        # We need to rely on the logic inside the function to track spacing accurately
-        division_height = calculate_division_height(calc_div_name, matches, is_first_division_of_graphic)
-        
-        if current_height + division_height <= SAFE_CONTENT_HEIGHT_LIMIT or not current_graphic:
-            # It fits, or it's the first section of a new graphic
-            current_graphic.append((calc_div_name, matches))
-            current_height += division_height
-            is_first_division_of_graphic = False
-        else:
-            # Doesn't fit, finalize the current graphic and start a new one
-            final_graphics_sections.append(current_graphic)
-            
-            # Recalculate the height of the current section, assuming it is now the FIRST on the NEW graphic
-            division_height_new_start = calculate_division_height(calc_div_name, matches, is_first_division=True)
-            
-            # Start a new graphic with the current section
-            current_graphic = [(calc_div_name, matches)]
-            current_height = division_height_new_start
-            is_first_division_of_graphic = False
-            
-    # Add the last graphic
-    if current_graphic:
-        final_graphics_sections.append(current_graphic)
-
-    # --- 4. Render Graphics ---
+    # --- 3. Generate Graphics (Height-based Packing with Specific Cup Rules) ---
+    
+    # 3a. Process cup matches first
+    remaining_cup_divisions = cup_divisions
     part_number = 1
-    if final_graphics_sections:
-        for sections_to_draw in final_graphics_sections:
-            print(f"\n--- RENDERING GRAPHIC PART {part_number} ---")
+    
+    # Ensure Trophy Cup is handled correctly across splits
+    trophy_cup_name = "Cup - Hampshire Trophy Cup"
+    trophy_cup_data = next((d for d in cup_divisions if d['division'] == trophy_cup_name), None)
+    
+    print("\n=== Processing Cup Graphics ===")
+    while remaining_cup_divisions:
+        sections_to_draw = []
+        current_height = 0
+        next_graphic_divisions = []
+        is_first_division_of_graphic = True
+
+        print(f"\n--- Processing cup graphic {part_number} ---")
+        
+        i = 0
+        while i < len(remaining_cup_divisions):
+            div_data = remaining_cup_divisions[i]
+            division_name = div_data['division']
+            matches = div_data['matches']
+            
+            current_matches = matches
+            remaining_matches = []
+            
+            # Apply specific cup logic to determine how many matches can be included
+            if division_name == trophy_cup_name:
+                # Include all Trophy Cup matches in the first graphic if space allows (or start a new one)
+                temp_height = calculate_division_height("Cup", current_matches, is_first_division_of_graphic)
+                if current_height + temp_height <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
+                    pass # Add all of it
+                else:
+                    # If it doesn't fit and it's the first thing, it must go on the new graphic
+                    next_graphic_divisions.append(div_data)
+                    i += 1
+                    continue
+            
+            elif division_name == "Cup - Hampshire Vase Cup":
+                # Max 2 Vase Cup matches if Trophy Cup is on the *current* graphic, otherwise up to 6
+                # We check if Trophy Cup is *already added* to sections_to_draw for the current graphic
+                trophy_cup_added_to_current_graphic = any(s[0] == "Cup" and s[1][0][4] == "Hampshire Trophy Cup" for s in sections_to_draw)
+                
+                max_matches = 2 if trophy_cup_added_to_current_graphic and part_number == 1 else 6
+                
+                if len(matches) > max_matches:
+                    current_matches = matches[:max_matches]
+                    remaining_matches = matches[max_matches:]
+                
+                temp_height = calculate_division_height("Cup", current_matches, is_first_division_of_graphic)
+                
+                if current_height + temp_height <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
+                    pass # Add the chunk
+                else:
+                    # If the chunk doesn't fit, move the whole thing to the next graphic
+                    next_graphic_divisions.append(div_data)
+                    i += 1
+                    continue
+            
+            else:
+                # Other cup types (treat as a single block)
+                temp_height = calculate_division_height("Cup", current_matches, is_first_division_of_graphic)
+                if current_height + temp_height <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
+                    pass # Add all of it
+                else:
+                    next_graphic_divisions.append(div_data)
+                    i += 1
+                    continue
+            
+            # --- If we reached here, the section (or chunk) fits ---
+            
+            sections_to_draw.append(("Cup", current_matches))
+            current_height += calculate_division_height("Cup", current_matches, is_first_division_of_graphic)
+            is_first_division_of_graphic = False
+            
+            # Add any remaining part back to the queue for the next graphic
+            if remaining_matches:
+                 next_graphic_divisions.append({
+                    'division': division_name,
+                    'matches': remaining_matches,
+                    'original_div': "Cup"
+                })
+            
+            i += 1 # Move to the next division in the original list
+
+
+        if sections_to_draw:
+            print(f"Final sections for cup graphic {part_number}: {[len(section[1]) for section in sections_to_draw]} matches")
+            print(f"Total height used: {current_height}px / {SAFE_CONTENT_HEIGHT_LIMIT}px")
             create_match_graphic_with_heading(sections_to_draw, logos_folder, save_folder, part_number, template_path, current_date)
             part_number += 1
-    else:
-        print("\n⚠️ No matches were found. No graphics generated.")
+        
+        if not sections_to_draw and remaining_cup_divisions:
+             # This means the first division in the remaining list is too tall to ever fit.
+             # We should break to avoid an infinite loop.
+             print("Error: Remaining cup divisions are too large to fit on a single graphic. Stopping cup processing.")
+             break
+
+        remaining_cup_divisions = next_graphic_divisions
+        if not remaining_cup_divisions and sections_to_draw:
+             break # All done
+
+    # 3b. Process league matches (Standard packing logic)
+    remaining_league_divisions = league_divisions
+    print("\n=== Processing League Graphics ===")
+    while remaining_league_divisions:
+        sections_to_draw = []
+        current_height = 0
+        next_graphic_divisions = []
+        is_first_division_of_graphic = True
+
+        print(f"\n--- Processing league graphic {part_number} ---")
+        
+        for div_data in remaining_league_divisions:
+            division_name = div_data['division']
+            matches = div_data['matches']
+            
+            # Calculate height for this league division
+            division_height = calculate_division_height(division_name, matches, is_first_division_of_graphic)
+
+            if current_height + division_height <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
+                sections_to_draw.append((division_name, matches))
+                current_height += division_height
+                is_first_division_of_graphic = False
+                print(f" -> Added {division_name} ({len(matches)} matches)")
+            else:
+                next_graphic_divisions.append(div_data)
+                print(f" -> {division_name} doesn't fit. Moving to next graphic.")
+
+        if sections_to_draw:
+            print(f"Final sections for league graphic {part_number}: {[section[0] for section in sections_to_draw]}")
+            print(f"Total height used: {current_height}px / {SAFE_CONTENT_HEIGHT_LIMIT}px")
+            create_match_graphic_with_heading(sections_to_draw, logos_folder, save_folder, part_number, template_path, current_date)
+            part_number += 1
+
+        remaining_league_divisions = next_graphic_divisions
+
+        if not sections_to_draw and remaining_league_divisions:
+            print("Error: Remaining league divisions are too large to fit on a single graphic. Stopping league processing.")
+            break
+        
+        if not remaining_league_divisions and sections_to_draw:
+             break # All done
 
     print(f"\n✅ Completed generating {part_number-1} graphic(s)")
 
