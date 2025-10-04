@@ -1,0 +1,3 @@
+[runner]
+# This explicitly tells Streamlit Cloud which Python version to use.
+python_version = 3.10
