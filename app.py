@@ -6,12 +6,12 @@ import glob
 import sys
 import pandas as pd
 import zipfile
+import time
+from datetime import datetime
 
 # --- Configuration for Git Repository Files ---
 GIT_FILES_TO_COPY = [
     "table.xlsx",
-    "results.xlsx",
-    "match of the day.xlsx",
     "Fixtures - automated.py",
     "match of the day - automated.py",
     "Results - automated.py",
@@ -42,12 +42,13 @@ for item in GIT_FILES_TO_COPY:
     dest_path = os.path.join(project_dir, item)
     if os.path.exists(source_path):
         shutil.copy2(source_path, dest_path)
-        # Set file permissions for font
-        if item.endswith((".ttf", ".otf")):
+        # Set file permissions for font and Excel files
+        if item.endswith((".ttf", ".otf", ".xlsx")):
             try:
                 os.chmod(dest_path, 0o777)
+                st.write(f"Copied and set permissions for {item} to {dest_path}")
             except Exception as e:
-                st.warning(f"Warning: Could not set permissions for font file. {e}")
+                st.warning(f"Warning: Could not set permissions for {item}. {e}")
     else:
         st.error(f"FATAL ERROR: Required file not found in Git repository: {item}")
         all_files_present = False
@@ -78,6 +79,10 @@ else:
     if selected_xlsx:
         xlsx_path = os.path.join(project_dir, selected_xlsx)
         try:
+            # Display file last modified time for debugging
+            mtime = datetime.fromtimestamp(os.path.getmtime(xlsx_path))
+            st.write(f"Last modified: {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
+            
             # Read all sheets from the selected Excel file
             xlsx_data = pd.read_excel(xlsx_path, sheet_name=None)
             sheet_names = list(xlsx_data.keys())
@@ -95,22 +100,41 @@ else:
             # Save changes button
             if st.button(f"Save Changes to {selected_xlsx}"):
                 try:
-                    # Update the selected sheet in the Excel file
-                    with pd.ExcelWriter(xlsx_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                    # Ensure the file is writable
+                    os.chmod(xlsx_path, 0o777)
+                    st.write(f"DEBUG: Set permissions for {xlsx_path} to 0o777")
+                    
+                    # Save all sheets, replacing the edited one
+                    with pd.ExcelWriter(xlsx_path, engine='openpyxl') as writer:
                         for sheet_name, data in xlsx_data.items():
                             if sheet_name == selected_sheet:
                                 edited_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                                st.write(f"DEBUG: Writing edited sheet {sheet_name} with {len(edited_df)} rows")
                             else:
                                 data.to_excel(writer, sheet_name=sheet_name, index=False)
+                                st.write(f"DEBUG: Writing unchanged sheet {sheet_name} with {len(data)} rows")
+                    
+                    # Verify the file was updated
+                    new_mtime = datetime.fromtimestamp(os.path.getmtime(xlsx_path))
+                    st.write(f"DEBUG: File last modified after save: {new_mtime.strftime('%Y-%m-%d %H:%M:%S')}")
                     st.success(f"Changes saved to {selected_xlsx} ({selected_sheet})")
                 except Exception as e:
                     st.error(f"Error saving changes: {e}")
+                    st.write(f"DEBUG: Current working directory: {os.getcwd()}")
+                    st.write(f"DEBUG: File exists: {os.path.exists(xlsx_path)}")
+                    st.write(f"DEBUG: File writable: {os.access(xlsx_path, os.W_OK)}")
         except Exception as e:
             st.error(f"Error loading {selected_xlsx}: {e}")
 
 # --- Graphic Generation ---
 graphics_dir = os.path.join(project_dir, "Graphics")
 os.makedirs(graphics_dir, exist_ok=True)
+try:
+    os.chmod(graphics_dir, 0o777)
+    st.write(f"DEBUG: Set permissions for {graphics_dir} to 0o777")
+except Exception as e:
+    st.warning(f"Warning: Could not set permissions for Graphics folder. {e}")
+
 mode = st.selectbox("Select Graphic Type", ["Fixtures", "Match of the Day", "Results", "Table"])
 script_map = {
     "Fixtures": "Fixtures - automated.py",
