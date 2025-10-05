@@ -6,11 +6,12 @@ import glob
 import sys
 import pandas as pd
 import zipfile
-import time
 from datetime import datetime
 
 # --- Configuration for Git Repository Files ---
 GIT_FILES_TO_COPY = [
+    "match of the day.xlsx",
+    "results.xlsx",
     "table.xlsx",
     "Fixtures - automated.py",
     "match of the day - automated.py",
@@ -42,11 +43,11 @@ for item in GIT_FILES_TO_COPY:
     dest_path = os.path.join(project_dir, item)
     if os.path.exists(source_path):
         shutil.copy2(source_path, dest_path)
-        # Set file permissions for font and Excel files
+        # Set file permissions for font and .xlsx files
         if item.endswith((".ttf", ".otf", ".xlsx")):
             try:
                 os.chmod(dest_path, 0o777)
-                st.write(f"Copied and set permissions for {item} to {dest_path}")
+                st.write(f"DEBUG: Copied and set permissions for {item} to {dest_path}")
             except Exception as e:
                 st.warning(f"Warning: Could not set permissions for {item}. {e}")
     else:
@@ -59,6 +60,7 @@ for item in GIT_DIRS_TO_COPY:
     dest_path = os.path.join(project_dir, item)
     if os.path.exists(source_path):
         shutil.copytree(source_path, dest_path)
+        st.write(f"DEBUG: Copied directory {item} to {dest_path}")
     else:
         st.error(f"FATAL ERROR: Required directory not found in Git repository: {item}")
         all_files_present = False
@@ -68,63 +70,46 @@ if not all_files_present:
 else:
     st.success("Project files loaded successfully from the Git repository.")
 
-# --- Excel File Editor ---
-st.subheader("Edit Excel Files")
-# Find all .xlsx files in the project directory
+# --- Download Excel Files Section ---
+st.subheader("Download Excel Files for Editing")
 xlsx_files = [f for f in os.listdir(project_dir) if f.endswith('.xlsx')]
 if not xlsx_files:
     st.warning("No Excel files found in the project directory.")
 else:
-    selected_xlsx = st.selectbox("Select Excel File to Edit", xlsx_files)
-    if selected_xlsx:
-        xlsx_path = os.path.join(project_dir, selected_xlsx)
+    for xlsx in xlsx_files:
+        xlsx_path = os.path.join(project_dir, xlsx)
         try:
-            # Display file last modified time for debugging
             mtime = datetime.fromtimestamp(os.path.getmtime(xlsx_path))
-            st.write(f"Last modified: {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            # Read all sheets from the selected Excel file
-            xlsx_data = pd.read_excel(xlsx_path, sheet_name=None)
-            sheet_names = list(xlsx_data.keys())
-            selected_sheet = st.selectbox(f"Select Sheet from {selected_xlsx}", sheet_names)
-            
-            # Display and edit the selected sheet
-            df = xlsx_data[selected_sheet]
-            st.write(f"Editing {selected_sheet} from {selected_xlsx}")
-            edited_df = st.data_editor(
-                df,
-                num_rows="dynamic",  # Allow adding/deleting rows
-                key=f"editor_{selected_xlsx}_{selected_sheet}"
-            )
-            
-            # Save changes button
-            if st.button(f"Save Changes to {selected_xlsx}"):
-                try:
-                    # Ensure the file is writable
-                    os.chmod(xlsx_path, 0o777)
-                    st.write(f"DEBUG: Set permissions for {xlsx_path} to 0o777")
-                    
-                    # Save all sheets, replacing the edited one
-                    with pd.ExcelWriter(xlsx_path, engine='openpyxl') as writer:
-                        for sheet_name, data in xlsx_data.items():
-                            if sheet_name == selected_sheet:
-                                edited_df.to_excel(writer, sheet_name=sheet_name, index=False)
-                                st.write(f"DEBUG: Writing edited sheet {sheet_name} with {len(edited_df)} rows")
-                            else:
-                                data.to_excel(writer, sheet_name=sheet_name, index=False)
-                                st.write(f"DEBUG: Writing unchanged sheet {sheet_name} with {len(data)} rows")
-                    
-                    # Verify the file was updated
-                    new_mtime = datetime.fromtimestamp(os.path.getmtime(xlsx_path))
-                    st.write(f"DEBUG: File last modified after save: {new_mtime.strftime('%Y-%m-%d %H:%M:%S')}")
-                    st.success(f"Changes saved to {selected_xlsx} ({selected_sheet})")
-                except Exception as e:
-                    st.error(f"Error saving changes: {e}")
-                    st.write(f"DEBUG: Current working directory: {os.getcwd()}")
-                    st.write(f"DEBUG: File exists: {os.path.exists(xlsx_path)}")
-                    st.write(f"DEBUG: File writable: {os.access(xlsx_path, os.W_OK)}")
+            st.write(f"DEBUG: {xlsx} last modified: {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
+            with open(xlsx_path, "rb") as f:
+                st.download_button(
+                    label=f"Download {xlsx}",
+                    data=f,
+                    file_name=xlsx,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
         except Exception as e:
-            st.error(f"Error loading {selected_xlsx}: {e}")
+            st.error(f"Error providing download for {xlsx}: {e}")
+
+# --- Upload Updated Excel Files Section ---
+st.subheader("Upload Updated Excel Files")
+uploaded_files = st.file_uploader("Upload edited .xlsx files (multiple allowed)", type=["xlsx"], accept_multiple_files=True)
+if uploaded_files:
+    for uploaded_file in uploaded_files:
+        try:
+            # Validate file name
+            if uploaded_file.name not in ["match of the day.xlsx", "results.xlsx", "table.xlsx"]:
+                st.warning(f"Warning: {uploaded_file.name} is not a recognized Excel file. It will still be saved.")
+            # Save uploaded file to project_dir
+            uploaded_path = os.path.join(project_dir, uploaded_file.name)
+            with open(uploaded_path, "wb") as f:
+                f.write(uploaded_file.getvalue())
+            # Set permissions
+            os.chmod(uploaded_path, 0o777)
+            mtime = datetime.fromtimestamp(os.path.getmtime(uploaded_path))
+            st.success(f"Uploaded {uploaded_file.name} to {uploaded_path} (last modified: {mtime.strftime('%Y-%m-%d %H:%M:%S')})")
+        except Exception as e:
+            st.error(f"Error uploading {uploaded_file.name}: {e}")
 
 # --- Graphic Generation ---
 graphics_dir = os.path.join(project_dir, "Graphics")
