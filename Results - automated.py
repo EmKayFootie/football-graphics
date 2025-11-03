@@ -447,10 +447,6 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
 
 # --- MAIN LOGIC (Containing the fix for UnboundLocalError) ---
 def generate_results_graphics(file_path: str, logos_folder: str, save_folder: str, template_path: str):
-    """
-    Main function to generate results graphics, implementing height-based packing
-    and splitting for cup matches.
-    """
     # 1. Load Date
     try:
         date_df = pd.read_excel(file_path, sheet_name='Date')
@@ -467,7 +463,7 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
     cup_divisions = []
     league_divisions = []
 
-    # Process cup matches by grouping by cup name
+    # --- Cup: Group by cup name ---
     cup_matches = parse_matches_from_file(file_path, "Cup")
     print(f"Loaded {len(cup_matches)} matches from Cup tab in XLSX file.")
     if cup_matches:
@@ -475,9 +471,8 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
         for match in cup_matches:
             cup_name = match[4] if match[4] else "Unknown Cup"
             cup_groups[cup_name].append(match)
-        
-        sorted_cup_groups = sorted(cup_groups.items(), key=lambda x: (x[0] != "Hampshire Trophy Cup", x[0])) 
-        
+        # Sort: Trophy Cup first
+        sorted_cup_groups = sorted(cup_groups.items(), key=lambda x: x[0] != "Hampshire Trophy Cup")
         for cup_name, matches in sorted_cup_groups:
             cup_divisions.append({
                 'division': f"Cup - {cup_name}",
@@ -485,7 +480,7 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
                 'original_div': "Cup"
             })
 
-    # Collect league divisions
+    # --- League: One per division ---
     for div in divisions[1:]:
         matches = parse_matches_from_file(file_path, div)
         print(f"Loaded {len(matches)} matches from {div} tab in XLSX file.")
@@ -496,170 +491,137 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
                 'original_div': div
             })
 
-    # 3. Generate Graphics (Height-based Packing)
-    
-    # 🚨 FIX 1: Initialize remaining_league_divisions with the initial league divisions 🚨
-    remaining_cup_divisions = cup_divisions
-    remaining_league_divisions = league_divisions # All league divisions start here
-    
+    # 3. Generate Graphics
+    remaining_cup = cup_divisions.copy()
+    remaining_league = league_divisions.copy()
     part_number = 1
-    trophy_cup_name = "Cup - Hampshire Trophy Cup"
-    
+
     print("\n--- Starting Graphic Generation ---")
-    
-    # 🚨 FIX 2: Loop as long as there are matches in either list 🚨
-    while remaining_cup_divisions or remaining_league_divisions:
+
+    while remaining_cup or remaining_league:
         sections_to_draw = []
         current_height = 0
-        next_cup_divisions = []
-        next_league_divisions = []
-        is_first_division_of_graphic = True
+        next_cup = []
+        next_league = []
+        is_first = True
 
         print(f"\n--- Processing graphic {part_number} ---")
-        print(f"Remaining divisions (Cup): {[d['division'] for d in remaining_cup_divisions]}")
-        
-        # --- 3a. Process Cup Divisions ---
+        print(f"Remaining Cup: {[d['division'] for d in remaining_cup]}")
+        print(f"Remaining League: {[d['division'] for d in remaining_league]}")
+
+        # --- PACK CUP FIRST ---
         i = 0
-        while i < len(remaining_cup_divisions):
-            div_data = remaining_cup_divisions[i]
-            division_name = div_data['division']
-            matches = div_data['matches']
-            
-            current_matches = matches
-            remaining_matches = []
-            will_add_to_current = False
-            
-            # Recalculate full height for the block
-            temp_height_full = calculate_division_height("Cup", current_matches, is_first_division_of_graphic)
-            
-            if division_name == trophy_cup_name:
-                # Rule: Include all Trophy Cup matches if space allows.
-                if current_height + temp_height_full <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
-                    will_add_to_current = True
-                else:
-                    # If it doesn't fit, move it to the next graphic (cannot split Trophy Cup)
-                    next_cup_divisions.append(div_data)
+        while i < len(remaining_cup):
+            div = remaining_cup[i]
+            name = div['division']
+            matches = div['matches']
+            temp_height = 0  # ← ALWAYS DEFINED
+
+            # Calculate full height
+            full_height = calculate_division_height("Cup", matches, is_first)
+
+            if name == "Cup - Hampshire Trophy Cup":
+                # Must include all or none
+                if current_height + full_height <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
+                    sections_to_draw.append(("Cup", matches))
+                    current_height += full_height
+                    is_first = False
                     i += 1
-                    continue
-            
-            elif division_name == "Cup - Hampshire Vase Cup":
-                # Rule: Max 2 Vase Cup matches if Trophy Cup is on the *current* graphic (assuming part 1), otherwise up to 6
-                trophy_cup_added_to_current_graphic = any(s[0] == "Cup" and s[1][0][4] == "Hampshire Trophy Cup" for s in sections_to_draw)
-                
-                max_matches = 2 if trophy_cup_added_to_current_graphic and part_number == 1 else 6
-                
+                    print(f" -> Added {name} ({len(matches)} matches)")
+                else:
+                    next_cup.append(div)
+                    i += 1
+                continue
+
+            elif name == "Cup - Hampshire Vase Cup":
+                max_matches = 2 if any("Trophy" in s[0] for s in sections_to_draw) and part_number == 1 else 6
                 if len(matches) > max_matches:
                     current_matches = matches[:max_matches]
-                    remaining_matches = matches[max_matches:]
-                    
-                temp_height = calculate_division_height("Cup", current_matches, is_first_division_of_graphic) # Height of the subset
-                
+                    remain_matches = matches[max_matches:]
+                    temp_height = calculate_division_height("Cup", current_matches, is_first)
+                else:
+                    current_matches = matches
+                    remain_matches = []
+                    temp_height = full_height
+
                 if current_height + temp_height <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
-                    will_add_to_current = True
-                else:
-                    # The max_matches subset didn't fit, so push the whole original block to the next graphic
-                    next_cup_divisions.append(div_data)
-                    print(f"Cup - Hampshire Vase Cup ({len(current_matches)} matches) does not fit.")
+                    sections_to_draw.append(("Cup", current_matches))
+                    current_height += temp_height
+                    is_first = False
+                    if remain_matches:
+                        next_cup.append({'division': name, 'matches': remain_matches, 'original_div': "Cup"})
                     i += 1
-                    continue
-            
-            else:
-                # Other cup types (general splitting logic)
-                if current_height + temp_height_full <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
-                    will_add_to_current = True
-                    temp_height = temp_height_full
+                    print(f" -> Added {name} ({len(current_matches)} matches)")
                 else:
-                    # Force split of a too-large cup block if it won't fit whole
-                    max_fit_matches = 0
-                    
+                    next_cup.append(div)
+                    i += 1
+                continue
+
+            else:
+                # Other cups: try to fit as much as possible
+                if current_height + full_height <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
+                    sections_to_draw.append(("Cup", matches))
+                    current_height += full_height
+                    is_first = False
+                    i += 1
+                    print(f" -> Added {name} ({len(matches)} matches)")
+                else:
+                    # Try splitting
+                    max_fit = 0
                     for k in range(1, len(matches) + 1):
-                        test_height = calculate_division_height("Cup", matches[:k], is_first_division_of_graphic)
-                        if current_height + test_height <= SAFE_CONTENT_HEIGHT_LIMIT:
-                             max_fit_matches = k
-                        elif not sections_to_draw and test_height <= SAFE_CONTENT_HEIGHT_LIMIT:
-                             max_fit_matches = k
+                        h = calculate_division_height("Cup", matches[:k], is_first)
+                        if current_height + h <= SAFE_CONTENT_HEIGHT_LIMIT or (not sections_to_draw and h <= SAFE_CONTENT_HEIGHT_LIMIT):
+                            max_fit = k
                         else:
                             break
-                    
-                    if max_fit_matches > 0:
-                        current_matches = matches[:max_fit_matches]
-                        remaining_matches = matches[max_fit_matches:]
-                        temp_height = calculate_division_height("Cup", current_matches, is_first_division_of_graphic)
-                        will_add_to_current = True
-                    else:
-                        print(f"CRITICAL: {division_name} cannot fit a single match. Skipping.")
+                    if max_fit > 0:
+                        current_matches = matches[:max_fit]
+                        remain_matches = matches[max_fit:]
+                        temp_height = calculate_division_height("Cup", current_matches, is_first)
+                        sections_to_draw.append(("Cup", current_matches))
+                        current_height += temp_height
+                        is_first = False
+                        if remain_matches:
+                            next_cup.append({'division': name, 'matches': remain_matches, 'original_div': "Cup"})
                         i += 1
-                        continue # Skip this un-packable division
+                        print(f" -> Split {name}: {max_fit} matches")
+                    else:
+                        next_cup.append(div)
+                        i += 1
+                continue
 
-
-            # --- Execute inclusion or deferral ---
-            if will_add_to_current and current_matches:
-                sections_to_draw.append(("Cup", current_matches))
-                current_height += temp_height
-                is_first_division_of_graphic = False
-                print(f" -> Added {division_name} ({len(current_matches)} matches). Total height: {current_height}px.")
-
-                if remaining_matches:
-                     next_cup_divisions.append({
-                        'division': division_name,
-                        'matches': remaining_matches,
-                        'original_div': "Cup"
-                    })
-                i += 1
-            else:
-                # If it didn't fit, move the whole block/rest to the next graphic's cup list
-                next_cup_divisions.append(div_data)
-                i += 1
-                
-        # --- 3b. Process League Divisions (Only if no Cup divisions remain to process) ---
-        if not next_cup_divisions: # Check against the 'next' list to see if all remaining cup divisions were processed
-            league_divisions_to_pack = remaining_league_divisions 
-            remaining_league_divisions = [] # Prepare for the next set of leftovers
-            
+        # --- PACK LEAGUE ONLY IF NO CUP LEFT ---
+        if not next_cup and remaining_league:
             i = 0
-            while i < len(league_divisions_to_pack):
-                div_data = league_divisions_to_pack[i]
-                division_name = div_data['division']
-                matches = div_data['matches']
-                
-                division_height = calculate_division_height(division_name, matches, is_first_division_of_graphic)
+            while i < len(remaining_league):
+                div = remaining_league[i]
+                name = div['division']
+                matches = div['matches']
+                h = calculate_division_height(name, matches, is_first)
 
-                if current_height + division_height <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
-                    sections_to_draw.append((division_name, matches))
-                    current_height += division_height
-                    is_first_division_of_graphic = False
-                    print(f" -> Added {division_name} ({len(matches)} matches). Total height: {current_height}px.")
+                if current_height + h <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
+                    sections_to_draw.append((name, matches))
+                    current_height += h
+                    is_first = False
                     i += 1
-                elif not sections_to_draw and division_height > SAFE_CONTENT_HEIGHT_LIMIT:
-                    print(f"CRITICAL: {division_name} ({len(matches)} matches, {division_height}px) is too tall to fit on a single graphic ({SAFE_CONTENT_HEIGHT_LIMIT}px). Skipping/Error.")
-                    i += 1
+                    print(f" -> Added {name} ({len(matches)} matches)")
                 else:
-                    # Move the rest of the league divisions to the next graphic's processing list
-                    next_league_divisions.extend(league_divisions_to_pack[i:])
-                    break # Stop processing league divisions for this graphic
-        else:
-            # If cup divisions remain for the next graphic, push all current league matches to the next league list
-            next_league_divisions.extend(remaining_league_divisions)
+                    next_league.extend(remaining_league[i:])
+                    break
 
-
-        # --- Post-loop graphic generation and cleanup ---
-
+        # --- Generate Graphic ---
         if sections_to_draw:
-            print(f"Final sections for graphic {part_number}: {[s[0] for s in sections_to_draw]}")
-            print(f"Total height used: {current_height}px / {SAFE_CONTENT_HEIGHT_LIMIT}px")
-            create_match_graphic_with_heading(sections_to_draw, logos_folder, save_folder, part_number, TEMPLATE_PATH, current_date)
+            print(f"Final: {[s[0] for s in sections_to_draw]}, Height: {current_height}px")
+            create_match_graphic_with_heading(sections_to_draw, logos_folder, save_folder, part_number, template_path, current_date)
             part_number += 1
-        
-        # Error check for infinite loop
-        if not sections_to_draw and (remaining_cup_divisions or remaining_league_divisions):
-             print("\nError: Remaining divisions are too large to fit on a single graphic, even the first one. Stopping processing.")
-             break
+        else:
+            print("No sections fit. Stopping.")
+            break
 
-        remaining_cup_divisions = next_cup_divisions
-        remaining_league_divisions = next_league_divisions
+        remaining_cup = next_cup
+        remaining_league = next_league
 
-
-    print(f"\n✅ Completed generating {part_number-1} graphic(s)")
+    print(f"\nCompleted generating {part_number-1} result graphic(s)")
     print("Results graphics generated successfully!")
 
 
