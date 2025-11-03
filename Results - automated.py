@@ -3,27 +3,26 @@ from PIL import Image, ImageDraw, ImageFont
 import pandas as pd
 from datetime import datetime
 from collections import defaultdict
-import math
 
 print("STARTING RESULTS SCRIPT")
 
 # --- Streamlit/GitHub Environment Setup ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- Configuration Constants (Must match Fixtures script for consistency) ---
+# --- Configuration Constants ---
 # Paths
 RESULTS_FILE_PATH = os.path.join(BASE_DIR, "results.xlsx")
 LOGOS_FOLDER = os.path.join(BASE_DIR, "Logos")
 SAVE_FOLDER = os.path.join(BASE_DIR, "Graphics")
 TEMPLATES_FOLDER = os.path.join(BASE_DIR, "Templates")
 TEMPLATE_PATH = os.path.join(TEMPLATES_FOLDER, "results_template.png")
-FONT_PATH = os.path.join(BASE_DIR, "BebasNeue Regular.ttf")
+FONT_PATH = os.path.join(BASE_DIR, "BebasNeue Regular.ttf")  # ← Critical
 
 # Image Dimensions and Layout
 IMAGE_WIDTH = 1080
 IMAGE_HEIGHT = 1350
 CONTENT_START_Y = 251.97
-SAFE_CONTENT_HEIGHT_LIMIT = 950  # Conservative height limit
+SAFE_CONTENT_HEIGHT_LIMIT = 950
 
 LEFT_PADDING = 5
 RIGHT_PADDING = 5
@@ -74,7 +73,7 @@ if os.path.exists(FONT_PATH):
         HEADING_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
         CUP_NAME_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_CUP_NAME)
         
-        heading_bbox = HEADING_FONT_TEMP.getbbox("League")
+        heading_bbox = HEADING_FONT_TEMP.getbbox("League Results")
         cup_name_bbox = CUP_NAME_FONT_TEMP.getbbox("Example Cup Name")
         
         HEADING_TEXT_HEIGHT = heading_bbox[3] - heading_bbox[1]
@@ -82,10 +81,10 @@ if os.path.exists(FONT_PATH):
 
         CUP_NAME_TEXT_HEIGHT = cup_name_bbox[3] - cup_name_bbox[1]
         CUP_NAME_SPACE = 5 + CUP_NAME_TEXT_HEIGHT + 10
-    except IOError:
-        pass  # Keep defaults
+    except Exception as e:
+        print(f"Font pre-calc failed: {e}. Using defaults.")
 else:
-    pass  # Keep defaults
+    print(f"Font not found at {FONT_PATH}. Using defaults.")
 
 print("Configuration constants loaded.")
 
@@ -209,13 +208,13 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     img = template.copy()
     d = ImageDraw.Draw(img)
 
-    # Load Fonts
+    # --- Load Fonts (FIXED) ---
     try:
         font = ImageFont.truetype(FONT_PATH, FONT_SIZE_NORMAL)
         score_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_SCORE)
         heading_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
         cup_name_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_CUP_NAME)
-        small_font = ImageFont.truetype(FONT_SIZE_SMALL_TEAM_NAME)
+        small_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_SMALL_TEAM_NAME)  # ← NOW CORRECT
         date_font_base = FONT_SIZE_DATE
     except IOError as e:
         print(f"Warning: Could not load font from {FONT_PATH}. Using default font. Error: {e}")
@@ -375,6 +374,7 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
         
         is_first_division_of_graphic = False 
 
+    # --- Save ---
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
@@ -382,7 +382,7 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     img.save(output_file_path) 
     print(f"Graphic saved to: {output_file_path}")
 
-# --- MAIN LOGIC (FIXED) ---
+# --- MAIN LOGIC ---
 def generate_results_graphics(file_path: str, logos_folder: str, save_folder: str, template_path: str):
     try:
         date_df = pd.read_excel(file_path, sheet_name='Date')
@@ -446,7 +446,7 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
             div = remaining_cup[i]
             name = div['division']
             matches = div['matches']
-            temp_height = 0  # Always defined
+            temp_height = 0
 
             full_height = calculate_division_height("Cup", matches, is_first)
 
@@ -517,7 +517,7 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
                         i += 1
                 continue
 
-        # --- PACK LEAGUE ONLY IF NO CUP LEFT ---
+        # --- PACK LEAGUE IF NO CUP LEFT ---
         if not next_cup and remaining_league:
             i = 0
             while i < len(remaining_league):
@@ -536,7 +536,7 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
                     next_league.extend(remaining_league[i:])
                     break
 
-        # --- Generate Graphic ---
+        # --- Generate ---
         if sections_to_draw:
             print(f"Final: {[s[0] for s in sections_to_draw]}, Height: {current_height}px")
             create_match_graphic_with_heading(sections_to_draw, logos_folder, save_folder, part_number, template_path, current_date)
