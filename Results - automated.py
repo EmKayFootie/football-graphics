@@ -10,22 +10,20 @@ print("STARTING RESULTS SCRIPT")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- Configuration Constants ---
-# Paths
 RESULTS_FILE_PATH = os.path.join(BASE_DIR, "results.xlsx")
 LOGOS_FOLDER = os.path.join(BASE_DIR, "Logos")
 SAVE_FOLDER = os.path.join(BASE_DIR, "Graphics")
 TEMPLATES_FOLDER = os.path.join(BASE_DIR, "Templates")
 TEMPLATE_PATH = os.path.join(TEMPLATES_FOLDER, "results_template.png")
-FONT_PATH = os.path.join(BASE_DIR, "BebasNeue Regular.ttf")  # ← Critical
+FONT_PATH = os.path.join(BASE_DIR, "BebasNeue Regular.ttf")
 
-# Image Dimensions and Layout
+# Image & Layout
 IMAGE_WIDTH = 1080
 IMAGE_HEIGHT = 1350
 CONTENT_START_Y = 251.97
-SAFE_CONTENT_HEIGHT_LIMIT = 950
+SAFE_CONTENT_HEIGHT_LIMIT = 950  # Conservative limit
 
 LEFT_PADDING = 5
-RIGHT_PADDING = 5
 TEAM_BOX_WIDTH = 330
 SCORE_BOX_WIDTH = 120
 LOGO_WIDTH = 140
@@ -45,44 +43,39 @@ DATE_CENTER_Y = (DATE_CIRCLE_SIZE * HIGH_RES_SCALE) // 2
 
 # Font Sizes
 FONT_SIZE_NORMAL = 65
-FONT_SIZE_SCORE = 75
+FONT_SIZE_SCORE = 55
 FONT_SIZE_HEADING = 64
 FONT_SIZE_CUP_NAME = 39
 FONT_SIZE_SMALL_TEAM_NAME = 50
 FONT_SIZE_DATE = 40
 FONT_SIZE_DATE_MIN = 30
+FONT_SIZE_PENALTY_SCORE = 32
+FONT_SIZE_PENALTIES_LABEL = 28
 
-# Visual Adjustments
 VISUAL_Y_OFFSET_CORRECTION = -5
 
-# Special Team Logo Mappings
+# Special Mappings
 SPECIAL_LOGO_MAPPING = {
     "afc aldermaston a": "AFC Aldermaston.png",
     "afc aldermaston b": "AFC Aldermaston.png",
+    "eversley & california sunday": "Eversley & California.png",
 }
 TEAMS_FOR_SMALLER_FONT = ["AFC Aldermaston A", "AFC Aldermaston B"]
 
-# --- Pre-calculate spacing based on font ---
+# --- Pre-calculate spacing ---
 HEADING_SPACE = 100
 CUP_NAME_SPACE = 70
-HEADING_TEXT_HEIGHT = 60
-CUP_NAME_TEXT_HEIGHT = 35
 
 if os.path.exists(FONT_PATH):
     try:
         HEADING_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
         CUP_NAME_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_CUP_NAME)
-        
-        heading_bbox = HEADING_FONT_TEMP.getbbox("League Results")
+        heading_bbox = HEADING_FONT_TEMP.getbbox("Cup Results")
         cup_name_bbox = CUP_NAME_FONT_TEMP.getbbox("Example Cup Name")
-        
-        HEADING_TEXT_HEIGHT = heading_bbox[3] - heading_bbox[1]
-        HEADING_SPACE = 20 + HEADING_TEXT_HEIGHT + 20
-
-        CUP_NAME_TEXT_HEIGHT = cup_name_bbox[3] - cup_name_bbox[1]
-        CUP_NAME_SPACE = 5 + CUP_NAME_TEXT_HEIGHT + 10
+        HEADING_SPACE = 20 + (heading_bbox[3] - heading_bbox[1]) + 20
+        CUP_NAME_SPACE = 5 + (cup_name_bbox[3] - cup_name_bbox[1]) + 10
     except Exception as e:
-        print(f"Font pre-calc failed: {e}. Using defaults.")
+        print(f"Font pre-calc failed: {e}")
 else:
     print(f"Font not found at {FONT_PATH}. Using defaults.")
 
@@ -91,465 +84,366 @@ print("Configuration constants loaded.")
 # --- Helper Functions ---
 
 def get_logo(team_name: str, logos_folder: str) -> Image.Image:
+    team_name_lower = team_name.strip().lower()
     team_name_clean = team_name.strip()
-    team_name_lower = team_name_clean.lower()
     
-    logo_filename = SPECIAL_LOGO_MAPPING.get(team_name_lower, f'{team_name_clean}.png')
-    
-    for subfolder in ['Current Teams', 'Old Teams']:
-        search_path = os.path.join(logos_folder, subfolder, logo_filename)
-        if os.path.exists(search_path):
-            try:
-                return Image.open(search_path).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), Image.LANCZOS)
-            except Exception as e:
-                print(f"Error loading logo '{logo_filename}' for {team_name}: {e}")
+    # Special mapping
+    for key, filename in SPECIAL_LOGO_MAPPING.items():
+        if key in team_name_lower:
+            for subfolder in ['Current Teams', 'Old Teams']:
+                path = os.path.join(logos_folder, subfolder, filename)
+                if os.path.exists(path):
+                    try:
+                        return Image.open(path).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), Image.LANCZOS)
+                    except Exception as e:
+                        print(f"Error loading mapped logo: {e}")
+                        break
 
-    generic_logo_path = os.path.join(logos_folder, 'genericlogo.png')
+    # Search by name
+    search_variants = [team_name_lower.replace(" ", "")]
+    if "utd" in team_name_lower: search_variants.append(team_name_lower.replace("utd", "united").replace(" ", ""))
+    if "united" in team_name_lower: search_variants.append(team_name_lower.replace("united", "utd").replace(" ", ""))
+    if "&" in team_name_lower: search_variants.append(team_name_lower.replace("&", "and").replace(" ", ""))
+    if "and" in team_name_lower: search_variants.append(team_name_lower.replace("and", "&").replace(" ", ""))
+    search_variants = list(set(search_variants))
+
+    for subfolder in ['Current Teams', 'Old Teams']:
+        folder = os.path.join(logos_folder, subfolder)
+        if not os.path.isdir(folder): continue
+        for f in os.listdir(folder):
+            f_lower = f.lower().replace(" ", "")
+            if any(v in f_lower for v in search_variants) and f_lower.endswith(('.png', '.jpg', '.jpeg')):
+                try:
+                    return Image.open(os.path.join(folder, f)).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), Image.LANCZOS)
+                except Exception as e:
+                    print(f"Error loading logo: {e}")
+
+    # Generic fallback
+    generic_path = os.path.join(logos_folder, 'genericlogo.png')
     try:
-        return Image.open(generic_logo_path).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), Image.LANCZOS)
+        return Image.open(generic_path).convert("RGBA").resize((LOGO_WIDTH, LOGO_HEIGHT), Image.LANCZOS)
     except Exception as e:
-        print(f"Error loading generic logo: {e}. Using gray placeholder.")
+        print(f"Generic logo failed: {e}. Using gray placeholder.")
         return Image.new("RGBA", (LOGO_WIDTH, LOGO_HEIGHT), (200, 200, 200, 255))
 
 def parse_matches_from_file(file_path: str, division: str) -> list[tuple]:
     matches = []
     try:
-        excel_data = pd.read_excel(file_path, sheet_name=division)
-        for _, row in excel_data.iterrows():
-            team_1_name = str(row['Team 1 name']).strip() if pd.notna(row['Team 1 name']) else ""
-            team_1_score = str(int(row['Team 1 score'])) if pd.notna(row['Team 1 score']) and pd.api.types.is_number(row['Team 1 score']) else str(row['Team 1 score']) if pd.notna(row['Team 1 score']) else "-"
-            team_2_score = str(int(row['Team 2 score'])) if pd.notna(row['Team 2 score']) and pd.api.types.is_number(row['Team 2 score']) else str(row['Team 2 score']) if pd.notna(row['Team 2 score']) else "-"
-            team_2_name = str(row['Team 2 name']).strip() if pd.notna(row['Team 2 name']) else ""
-            cup_name = None
-            if 'Cup name' in row and pd.notna(row['Cup name']):
-                cup_name = str(row['Cup name']).strip()
-            
-            if team_1_name and team_2_name and team_1_score != "-" and team_2_score != "-":
-                matches.append((team_1_name, team_1_score, team_2_score, team_2_name, cup_name))
+        df = pd.read_excel(file_path, sheet_name=division)
+        print(f"Loaded {len(df)} rows from {division} tab.")
+        for _, row in df.iterrows():
+            team_1_name = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ""
+            team_1_score = str(row.iloc[1]) if pd.notna(row.iloc[1]) else "-"
+            team_2_score = str(row.iloc[2]) if pd.notna(row.iloc[2]) else "-"
+            team_2_name = str(row.iloc[3]).strip() if pd.notna(row.iloc[3]) else ""
+            cup_name = str(row.iloc[4]).strip() if division == "Cup" and pd.notna(row.iloc[4]) else None
+            penalty_score = str(row.iloc[5]).strip() if division == "Cup" and pd.notna(row.iloc[5]) else None
+            if team_1_name and team_2_name:
+                matches.append((team_1_name, team_1_score, team_2_score, team_2_name, cup_name, penalty_score))
     except Exception as e:
-        pass
+        print(f"Error reading {division}: {e}")
     return matches
 
 def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.ImageDraw) -> list[str]:
     words = text.split()
     lines = []
     current_line = []
-    
-    def get_text_width(txt, f):
-        return draw.textbbox((0, 0), txt, font=f)[2] - draw.textbbox((0, 0), txt, font=f)[0]
-        
-    space_width = get_text_width(" ", font)
-    
     for word in words:
-        word_width = get_text_width(word, font)
-        test_line = " ".join(current_line + [word])
-        test_width = get_text_width(test_line, font)
-             
-        if not current_line and word_width <= max_width:
+        word_bbox = draw.textbbox((0, 0), word, font=font)
+        word_width = word_bbox[2] - word_bbox[0]
+        space_width = draw.textbbox((0, 0), " ", font=font)[2] - draw.textbbox((0, 0), " ", font=font)[0]
+        if current_line and draw.textbbox((0,0), " ".join(current_line + [word]), font=font)[2] <= max_width:
             current_line.append(word)
-        elif current_line and test_width <= max_width:
+        elif not current_line and word_width <= max_width:
             current_line.append(word)
         else:
-            if current_line:
-                lines.append(" ".join(current_line))
+            lines.append(" ".join(current_line))
             current_line = [word]
-            
     if current_line:
         lines.append(" ".join(current_line))
     return lines
 
 def get_wrapped_text_block_height(lines: list[str], font: ImageFont.FreeTypeFont, line_spacing: int, draw: ImageDraw.ImageDraw) -> int:
-    if not lines:
-        return 0
-    total_height = 0
+    if not lines: return 0
+    total = 0
     for i, line in enumerate(lines):
-        line_bbox = draw.textbbox((0, 0), line, font=font)
-        line_actual_height = line_bbox[3] - line_bbox[1]
-        total_height += line_actual_height
-        if i < len(lines) - 1:
-            total_height += line_spacing 
-    return total_height
+        bbox = draw.textbbox((0,0), line, font=font)
+        total += bbox[3] - bbox[1]
+        if i < len(lines) - 1: total += line_spacing
+    return total
 
 def calculate_division_height(division_name: str, matches: list, is_first_division: bool = True) -> int:
-    total_height = HEADING_SPACE
+    height = HEADING_SPACE
     if not is_first_division:
-        total_height += FIXTURE_SPACING
-
+        height += FIXTURE_SPACING
     last_cup_name = None
     for j, match in enumerate(matches):
-        match_height = BOX_HEIGHT
-        cup_name = match[4]
-        if division_name.lower().startswith("cup") and cup_name and cup_name != last_cup_name:
-            match_height += CUP_NAME_SPACE
-            last_cup_name = cup_name
-        
+        h = BOX_HEIGHT
         if j > 0:
-            prev_match_cup_name = matches[j-1][4]
-            current_match_cup_name = match[4]
-            is_start_of_new_cup_group = (division_name.lower().startswith("cup") and 
-                                         current_match_cup_name and 
-                                         current_match_cup_name != prev_match_cup_name)
-            if not is_start_of_new_cup_group:
-                match_height += FIXTURE_SPACING
+            h += FIXTURE_SPACING
+        cup_name = match[4]
+        if division_name == "Cup" and cup_name and cup_name != last_cup_name:
+            h += CUP_NAME_SPACE
+            last_cup_name = cup_name
+        height += h
+    return height
 
-        total_height += match_height
-    return total_height
-
-# --- Main Graphic Generation Function ---
+# --- Graphic Generation ---
 def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folder: str, save_folder: str, part_number: int, template_path: str, current_date: datetime):
     try:
         template = Image.open(template_path).convert("RGBA")
         if template.size != (IMAGE_WIDTH, IMAGE_HEIGHT):
-            raise ValueError(f"Template must be exactly {IMAGE_WIDTH}x{IMAGE_HEIGHT} pixels.")
+            raise ValueError(f"Template must be {IMAGE_WIDTH}x{IMAGE_HEIGHT}")
     except Exception as e:
-        print(f"Error loading template: {e}. Using transparent background instead.")
-        template = Image.new("RGBA", (IMAGE_WIDTH, IMAGE_HEIGHT), (0, 0, 0, 0))
-        
+        print(f"Template error: {e}. Using blank.")
+        template = Image.new("RGBA", (IMAGE_WIDTH, IMAGE_HEIGHT), (0,0,0,0))
     img = template.copy()
     d = ImageDraw.Draw(img)
 
-    # --- Load Fonts (FIXED) ---
+    # Load fonts
     try:
         font = ImageFont.truetype(FONT_PATH, FONT_SIZE_NORMAL)
         score_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_SCORE)
         heading_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
         cup_name_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_CUP_NAME)
-        small_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_SMALL_TEAM_NAME)  # ← NOW CORRECT
-        date_font_base = FONT_SIZE_DATE
-    except IOError as e:
-        print(f"Warning: Could not load font from {FONT_PATH}. Using default font. Error: {e}")
-        font = score_font = heading_font = cup_name_font = small_font = ImageFont.load_default()
-        date_font_base = 40
+        small_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_SMALL_TEAM_NAME)
+        penalty_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_PENALTY_SCORE)
+        label_font = ImageFont.truetype(FONT_PATH, FONT_SIZE_PENALTIES_LABEL)
+    except Exception as e:
+        print(f"Font load failed: {e}. Using default.")
+        font = score_font = heading_font = cup_name_font = small_font = penalty_font = label_font = ImageFont.load_default()
 
-    # --- Date Circle Generation ---
-    high_res_size = DATE_CIRCLE_SIZE * HIGH_RES_SCALE
-    circle_img = Image.new("RGBA", (high_res_size, high_res_size), (0, 0, 0, 0))
-    circle_draw = ImageDraw.Draw(circle_img)
-    
-    day_text = current_date.strftime("%d")
-    month_text = current_date.strftime("%b").upper()
-    year_text = current_date.strftime("%Y")
-    
-    font_size = date_font_base
-    date_font = None 
-    
+    # Date circle
+    high_res = DATE_CIRCLE_SIZE * HIGH_RES_SCALE
+    circle = Image.new("RGBA", (high_res, high_res), (0,0,0,0))
+    cd = ImageDraw.Draw(circle)
+    day = current_date.strftime("%d")
+    month = current_date.strftime("%B")
+    year = current_date.strftime("%Y")
+    font_size = FONT_SIZE_DATE
     while font_size >= FONT_SIZE_DATE_MIN:
-        try:
-            date_font = ImageFont.truetype(FONT_PATH, int(font_size * HIGH_RES_SCALE))
-        except IOError:
-            date_font = ImageFont.load_default() 
-
-        temp_date_font = date_font if isinstance(date_font, ImageFont.FreeTypeFont) else ImageFont.load_default() 
-
-        day_bbox = circle_draw.textbbox((0, 0), day_text, font=temp_date_font)
-        month_bbox = circle_draw.textbbox((0, 0), month_text, font=temp_date_font)
-        year_bbox = circle_draw.textbbox((0, 0), year_text, font=temp_date_font)
-        
-        day_height = day_bbox[3] - day_bbox[1]
-        month_height = month_bbox[3] - month_bbox[1]
-        year_height = year_bbox[3] - year_bbox[1]
-
-        max_text_width = max(day_bbox[2] - day_bbox[0], month_bbox[2] - month_bbox[0], year_bbox[2] - year_bbox[0])
-        total_text_height = day_height + month_height + year_height + 10 * HIGH_RES_SCALE 
-        
-        if max_text_width <= DATE_TEXT_MAX_WIDTH * HIGH_RES_SCALE and total_text_height <= DATE_TEXT_MAX_HEIGHT * HIGH_RES_SCALE:
+        df = ImageFont.truetype(FONT_PATH, int(font_size * HIGH_RES_SCALE))
+        db = cd.textbbox((0,0), day, font=df)
+        mb = cd.textbbox((0,0), month, font=df)
+        yb = cd.textbbox((0,0), year, font=df)
+        w = max(db[2]-db[0], mb[2]-mb[0], yb[2]-yb[0])
+        h = (db[3]-db[1]) + (mb[3]-mb[1]) + (yb[3]-yb[1]) + 10*HIGH_RES_SCALE
+        if w <= DATE_TEXT_MAX_WIDTH*HIGH_RES_SCALE and h <= DATE_TEXT_MAX_HEIGHT*HIGH_RES_SCALE:
             break
-        
         font_size -= 2
-    
-    circle_draw.ellipse(
-        [0, 0, high_res_size, high_res_size],
-        fill=(255, 255, 255, 255),
-        outline=(0, 0, 0, 255),
-        width=DATE_CIRCLE_STROKE * HIGH_RES_SCALE
-    )
-    
-    text_height_half = total_text_height // 2
-    day_y = DATE_CENTER_Y - text_height_half
-    month_y = day_y + day_height + 5 * HIGH_RES_SCALE
-    year_y = month_y + month_height + 5 * HIGH_RES_SCALE
-    
-    circle_draw.text((DATE_CENTER_X - (day_bbox[2] - day_bbox[0]) // 2, day_y), day_text, fill=(0, 0, 0, 255), font=date_font)
-    circle_draw.text((DATE_CENTER_X - (month_bbox[2] - month_bbox[0]) // 2, month_y), month_text, fill=(0, 0, 0, 255), font=date_font)
-    circle_draw.text((DATE_CENTER_X - (year_bbox[2] - year_bbox[0]) // 2, year_y), year_text, fill=(0, 0, 0, 255), font=date_font)
-    
-    circle_img = circle_img.resize((DATE_CIRCLE_SIZE, DATE_CIRCLE_SIZE), Image.LANCZOS)
-    img.paste(circle_img, (DATE_CIRCLE_X, DATE_CIRCLE_Y), circle_img)
+    cd.ellipse([0,0,high_res,high_res], fill=(255,255,255,255), outline=(0,0,0,255), width=DATE_CIRCLE_STROKE*HIGH_RES_SCALE)
+    total_h = (db[3]-db[1]) + (mb[3]-mb[1]) + (yb[3]-yb[1]) + 10*HIGH_RES_SCALE
+    y = DATE_CENTER_Y - total_h//2
+    cd.text((DATE_CENTER_X - (db[2]-db[0])//2, y), day, fill=(0,0,0,255), font=df)
+    y += (db[3]-db[1]) + 5*HIGH_RES_SCALE
+    cd.text((DATE_CENTER_X - (mb[2]-mb[0])//2, y), month, fill=(0,0,0,255), font=df)
+    y += (mb[3]-mb[1]) + 5*HIGH_RES_SCALE
+    cd.text((DATE_CENTER_X - (yb[2]-yb[0])//2, y), year, fill=(0,0,0,255), font=df)
+    circle = circle.resize((DATE_CIRCLE_SIZE, DATE_CIRCLE_SIZE), Image.LANCZOS)
+    img.paste(circle, (DATE_CIRCLE_X, DATE_CIRCLE_Y), circle)
 
-    # --- Draw Matches ---
     y_offset = CONTENT_START_Y
-    visual_y_offset_correction = VISUAL_Y_OFFSET_CORRECTION
-    is_first_division_of_graphic = True 
-    
-    for division_name, matches in sections_to_draw:
-        if not is_first_division_of_graphic:
-            y_offset += FIXTURE_SPACING 
-        
-        heading = "Cup Results" if division_name.lower().startswith("cup") else f"{division_name} Results"
-        heading_bbox = d.textbbox((0, 0), heading, font=heading_font)
-        heading_width = heading_bbox[2] - heading_bbox[0]
-        heading_text_height = heading_bbox[3] - heading_bbox[1]
-        heading_x = (IMAGE_WIDTH - heading_width) // 2
-        heading_text_y = y_offset + 20 + (HEADING_TEXT_HEIGHT - heading_text_height) / 2
-        d.text((heading_x, heading_text_y), heading, fill=(255, 255, 255), font=heading_font)
-        
-        y_offset += HEADING_SPACE 
-        
-        last_cup_name = None
-        is_first_fixture_in_section = True
-        
+    is_first = True
+    for div_name, matches in sections_to_draw:
+        if not is_first: y_offset += FIXTURE_SPACING
+        heading = "Cup Results" if div_name == "Cup" else f"{div_name} Results"
+        bbox = d.textbbox((0,0), heading, font=heading_font)
+        x = (IMAGE_WIDTH - (bbox[2]-bbox[0])) // 2
+        d.text((x, y_offset + 20), heading, fill=(255,255,255), font=heading_font)
+        y_offset += HEADING_SPACE
+        last_cup = None
         for match in matches:
-            team_1_name, score_1, score_2, team_2_name, cup_name = match
-            
-            if division_name.lower().startswith("cup") and cup_name and cup_name != last_cup_name:
-                cup_name_x = LEFT_PADDING
-                cup_name_bbox = d.textbbox((0, 0), cup_name, font=cup_name_font)
-                cup_name_text_height = cup_name_bbox[3] - cup_name_bbox[1]
-                cup_name_text_y = y_offset + 5 + (CUP_NAME_TEXT_HEIGHT - cup_name_text_height) / 2
-                d.text((cup_name_x, cup_name_text_y), cup_name, fill=(255, 255, 0), font=cup_name_font)
-                y_offset += CUP_NAME_SPACE 
-                last_cup_name = cup_name
-                is_first_fixture_in_section = True
-
-            if not is_first_fixture_in_section:
+            t1, s1, s2, t2, cup_name, pen = match
+            if div_name == "Cup" and cup_name and cup_name != last_cup:
+                bbox = d.textbbox((0,0), cup_name, font=cup_name_font)
+                d.text((LEFT_PADDING, y_offset + 5), cup_name, fill=(255,255,0), font=cup_name_font)
+                y_offset += CUP_NAME_SPACE
+                last_cup = cup_name
+            else:
                 y_offset += FIXTURE_SPACING
 
-            logo_1 = get_logo(team_1_name, logos_folder)
-            logo_2 = get_logo(team_2_name, logos_folder)
-            
-            logo_1_x = LEFT_PADDING + 1
-            img.paste(logo_1, (logo_1_x, int(y_offset) + 1), logo_1)
+            logo1 = get_logo(t1, logos_folder)
+            logo2 = get_logo(t2, logos_folder)
+            img.paste(logo1, (LEFT_PADDING + 1, int(y_offset) + 1), logo1)
 
-            team_1_box_x = logo_1_x + LOGO_WIDTH + 2
-            team_1_box_y = y_offset
-            d.rectangle([team_1_box_x, team_1_box_y, team_1_box_x + TEAM_BOX_WIDTH, team_1_box_y + BOX_HEIGHT - 1], fill=(0, 0, 0, 180))
-            
-            team_1_font = small_font if team_1_name in TEAMS_FOR_SMALLER_FONT else font
-            team_1_lines = wrap_text(team_1_name, team_1_font, TEAM_BOX_WIDTH - 20, d)
-            team_1_total_text_block_height = get_wrapped_text_block_height(team_1_lines, team_1_font, LINE_SPACING, d)
-            team_1_start_y_text = team_1_box_y + (BOX_HEIGHT - team_1_total_text_block_height) // 2 + visual_y_offset_correction
-            
-            current_line_y_team1 = team_1_start_y_text
-            for line in team_1_lines:
-                line_bbox = d.textbbox((0, 0), line, font=team_1_font)
-                line_width = line_bbox[2] - line_bbox[0]
-                line_x = team_1_box_x + (TEAM_BOX_WIDTH - line_width) // 2
-                d.text((line_x, current_line_y_team1), line, fill=(255, 255, 255), font=team_1_font)
-                current_line_y_team1 += (line_bbox[3] - line_bbox[1]) + LINE_SPACING
+            # Team 1
+            x1 = LEFT_PADDING + LOGO_WIDTH + 3
+            d.rectangle([x1, y_offset, x1 + TEAM_BOX_WIDTH, y_offset + BOX_HEIGHT - 1], fill=(0,0,0,180))
+            f1 = small_font if t1 in TEAMS_FOR_SMALLER_FONT else font
+            lines1 = wrap_text(t1, f1, TEAM_BOX_WIDTH - 20, d)
+            h1 = get_wrapped_text_block_height(lines1, f1, LINE_SPACING, d)
+            start_y1 = y_offset + (BOX_HEIGHT - h1)//2 + VISUAL_Y_OFFSET_CORRECTION
+            cur_y = start_y1
+            for line in lines1:
+                bbox = d.textbbox((0,0), line, font=f1)
+                lx = x1 + (TEAM_BOX_WIDTH - (bbox[2]-bbox[0]))//2
+                d.text((lx, cur_y), line, fill=(255,255,255), font=f1)
+                cur_y += (bbox[3]-bbox[1]) + LINE_SPACING
 
-            score_box_x = team_1_box_x + TEAM_BOX_WIDTH + 5
-            score_box_y = y_offset
-            d.rectangle([score_box_x, score_box_y, score_box_x + SCORE_BOX_WIDTH, score_box_y + BOX_HEIGHT - 1], fill=(100, 100, 100, 200))
-            
-            score_text = f"{score_1} - {score_2}"
-            score_bbox = d.textbbox((0, 0), score_text, font=score_font)
-            score_width = score_bbox[2] - score_bbox[0]
-            score_height = score_bbox[3] - score_bbox[1]
-            score_text_x = score_box_x + (SCORE_BOX_WIDTH - score_width) // 2
-            score_text_y = score_box_y + (BOX_HEIGHT - score_height) // 2 + visual_y_offset_correction
-            d.text((score_text_x, score_text_y), score_text, fill=(255, 255, 255), font=score_font)
+            # Score
+            sx = x1 + TEAM_BOX_WIDTH + 5
+            d.rectangle([sx, y_offset, sx + SCORE_BOX_WIDTH, y_offset + BOX_HEIGHT - 1], fill=(0,0,0,180))
+            score_text = f"{s1} - {s2}"
+            sbox = d.textbbox((0,0), score_text, font=score_font)
+            if div_name == "Cup" and pen:
+                reg_y = y_offset + 8
+                d.text((sx + (SCORE_BOX_WIDTH - (sbox[2]-sbox[0]))//2, reg_y), score_text, fill=(255,255,255), font=score_font)
+                label = "PENALTIES"
+                lb = d.textbbox((0,0), label, font=label_font)
+                ly = reg_y + (sbox[3]-sbox[1]) + 12
+                d.text((sx + (SCORE_BOX_WIDTH - (lb[2]-lb[0]))//2, ly), label, fill=(255,255,0), font=label_font)
+                pb = d.textbbox((0,0), pen, font=penalty_font)
+                py = ly + (lb[3]-lb[1]) + 8
+                d.text((sx + (SCORE_BOX_WIDTH - (pb[2]-pb[0]))//2, py), pen, fill=(255,255,255), font=penalty_font)
+            else:
+                d.text((sx + (SCORE_BOX_WIDTH - (sbox[2]-sbox[0]))//2, y_offset + (BOX_HEIGHT - (sbox[3]-sbox[1]))//2), score_text, fill=(255,255,255), font=score_font)
 
-            team_2_box_x = score_box_x + SCORE_BOX_WIDTH + 5
-            team_2_box_y = y_offset
-            d.rectangle([team_2_box_x, team_2_box_y, team_2_box_x + TEAM_BOX_WIDTH, team_2_box_y + BOX_HEIGHT - 1], fill=(0, 0, 0, 180))
-            
-            team_2_font = small_font if team_2_name in TEAMS_FOR_SMALLER_FONT else font
-            team_2_lines = wrap_text(team_2_name, team_2_font, TEAM_BOX_WIDTH - 20, d)
-            team_2_total_text_block_height = get_wrapped_text_block_height(team_2_lines, team_2_font, LINE_SPACING, d)
-            team_2_start_y_text = team_2_box_y + (BOX_HEIGHT - team_2_total_text_block_height) // 2 + visual_y_offset_correction
-            
-            current_line_y_team2 = team_2_start_y_text
-            for line in team_2_lines:
-                line_bbox = d.textbbox((0, 0), line, font=team_2_font)
-                line_width = line_bbox[2] - line_bbox[0]
-                line_x = team_2_box_x + (TEAM_BOX_WIDTH - line_width) // 2
-                d.text((line_x, current_line_y_team2), line, fill=(255, 255, 255), font=team_2_font)
-                current_line_y_team2 += (line_bbox[3] - line_bbox[1]) + LINE_SPACING
+            # Team 2
+            x2 = sx + SCORE_BOX_WIDTH + 5
+            d.rectangle([x2, y_offset, x2 + TEAM_BOX_WIDTH, y_offset + BOX_HEIGHT - 1], fill=(0,0,0,180))
+            f2 = small_font if t2 in TEAMS_FOR_SMALLER_FONT else font
+            lines2 = wrap_text(t2, f2, TEAM_BOX_WIDTH - 20, d)
+            h2 = get_wrapped_text_block_height(lines2, f2, LINE_SPACING, d)
+            start_y2 = y_offset + (BOX_HEIGHT - h2)//2 + VISUAL_Y_OFFSET_CORRECTION
+            cur_y = start_y2
+            for line in lines2:
+                bbox = d.textbbox((0,0), line, font=f2)
+                lx = x2 + (TEAM_BOX_WIDTH - (bbox[2]-bbox[0]))//2
+                d.text((lx, cur_y), line, fill=(255,255,255), font=f2)
+                cur_y += (bbox[3]-bbox[1]) + LINE_SPACING
 
-            logo_2_x = team_2_box_x + TEAM_BOX_WIDTH + 2
-            img.paste(logo_2, (logo_2_x, int(y_offset) + 1), logo_2)
-            
+            img.paste(logo2, (x2 + TEAM_BOX_WIDTH + 2, int(y_offset) + 1), logo2)
             y_offset += BOX_HEIGHT
-            is_first_fixture_in_section = False
-        
-        is_first_division_of_graphic = False 
+        is_first = False
 
-    # --- Save ---
-    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
-    output_file_path = os.path.join(save_folder, f"Results_Part{part_number}_{current_time}.png")
-    img.save(output_file_path) 
-    print(f"Graphic saved to: {output_file_path}")
+    # Save
+    os.makedirs(save_folder, exist_ok=True)
+    time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    path = os.path.join(save_folder, f"Results_Part{part_number}_{time_str}.png")
+    img.save(path)
+    print(f"Graphic saved: {path}")
 
-# --- MAIN LOGIC ---
+# --- MAIN LOGIC (FIXED) ---
 def generate_results_graphics(file_path: str, logos_folder: str, save_folder: str, template_path: str):
+    # Date
     try:
-        date_df = pd.read_excel(file_path, sheet_name='Date')
-        date_str = str(date_df['Date'].iloc[0]).strip()
+        df = pd.read_excel(file_path, sheet_name='Date')
+        date_str = str(df['Date'].iloc[0]).strip()
         current_date = pd.to_datetime(date_str, errors='coerce')
         if pd.isna(current_date): raise ValueError()
-        print(f"Date '{date_str}' successfully parsed as {current_date.strftime('%d %B %Y')}.")
-    except Exception:
-        print("Warning: Could not read date from file. Using current date.")
+        print(f"Date parsed: {current_date.strftime('%d %B %Y')}")
+    except Exception as e:
+        print(f"Date error: {e}. Using now.")
         current_date = datetime.now()
 
-    divisions = ["Cup", "Division 1", "Division 2", "Division 3", "Division 4"]
-    cup_divisions = []
-    league_divisions = []
-
+    # Load data
     cup_matches = parse_matches_from_file(file_path, "Cup")
-    print(f"Loaded {len(cup_matches)} matches from Cup tab in XLSX file.")
-    if cup_matches:
-        cup_groups = defaultdict(list)
-        for match in cup_matches:
-            cup_name = match[4] if match[4] else "Unknown Cup"
-            cup_groups[cup_name].append(match)
-        sorted_cup_groups = sorted(cup_groups.items(), key=lambda x: x[0] != "Hampshire Trophy Cup")
-        for cup_name, matches in sorted_cup_groups:
-            cup_divisions.append({
-                'division': f"Cup - {cup_name}",
-                'matches': matches,
-                'original_div': "Cup"
-            })
-
-    for div in divisions[1:]:
+    league_divisions = []
+    for div in ["Division 1", "Division 2", "Division 3", "Division 4"]:
         matches = parse_matches_from_file(file_path, div)
-        print(f"Loaded {len(matches)} matches from {div} tab in XLSX file.")
         if matches:
-            league_divisions.append({
-                'division': div,
-                'matches': matches,
-                'original_div': div
-            })
+            league_divisions.append({'division': div, 'matches': matches})
 
-    remaining_cup = cup_divisions.copy()
-    remaining_league = league_divisions.copy()
+    # Group cups
+    cup_groups = defaultdict(list)
+    for m in cup_matches:
+        cup_name = m[4] if m[4] else "Unknown Cup"
+        cup_groups[cup_name].append(m)
+    sorted_cup = sorted(cup_groups.items(), key=lambda x: x[0] != "Hampshire Trophy Cup")
+    cup_divisions = [{'division': f"Cup - {name}", 'matches': matches} for name, matches in sorted_cup]
+
     part_number = 1
+    trophy_included = False
 
-    print("\n--- Starting Graphic Generation ---")
-
-    while remaining_cup or remaining_league:
-        sections_to_draw = []
-        current_height = 0
+    # === CUP GRAPHICS ===
+    remaining_cup = cup_divisions.copy()
+    print("\n=== CUP GRAPHICS ===")
+    while remaining_cup:
+        sections = []
+        height = 0
         next_cup = []
-        next_league = []
-        is_first = True
-
-        print(f"\n--- Processing graphic {part_number} ---")
-        print(f"Remaining Cup: {[d['division'] for d in remaining_cup]}")
-        print(f"Remaining League: {[d['division'] for d in remaining_league]}")
-
-        # --- PACK CUP FIRST ---
-        i = 0
-        while i < len(remaining_cup):
-            div = remaining_cup[i]
+        first = True
+        print(f"\n--- Cup Part {part_number} ---")
+        for div in remaining_cup:
             name = div['division']
             matches = div['matches']
-            temp_height = 0
-
-            full_height = calculate_division_height("Cup", matches, is_first)
-
-            if name == "Cup - Hampshire Trophy Cup":
-                if current_height + full_height <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
-                    sections_to_draw.append(("Cup", matches))
-                    current_height += full_height
-                    is_first = False
-                    i += 1
-                    print(f" -> Added {name} ({len(matches)} matches)")
+            h = calculate_division_height("Cup", matches, first)
+            if name.startswith("Cup - Hampshire Trophy Cup") and not trophy_included:
+                if height + h <= SAFE_CONTENT_HEIGHT_LIMIT or not sections:
+                    sections.append(("Cup", matches))
+                    height += h
+                    first = False
+                    trophy_included = True
+                    print(f" -> Added {name}")
                 else:
                     next_cup.append(div)
-                    i += 1
                 continue
-
-            elif name == "Cup - Hampshire Vase Cup":
-                max_matches = 2 if any("Trophy" in s[0] for s in sections_to_draw) and part_number == 1 else 6
-                if len(matches) > max_matches:
-                    current_matches = matches[:max_matches]
-                    remain_matches = matches[max_matches:]
-                    temp_height = calculate_division_height("Cup", current_matches, is_first)
-                else:
-                    current_matches = matches
-                    remain_matches = []
-                    temp_height = full_height
-
-                if current_height + temp_height <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
-                    sections_to_draw.append(("Cup", current_matches))
-                    current_height += temp_height
-                    is_first = False
-                    if remain_matches:
-                        next_cup.append({'division': name, 'matches': remain_matches, 'original_div': "Cup"})
-                    i += 1
-                    print(f" -> Added {name} ({len(current_matches)} matches)")
-                else:
-                    next_cup.append(div)
-                    i += 1
-                continue
-
-            else:
-                if current_height + full_height <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
-                    sections_to_draw.append(("Cup", matches))
-                    current_height += full_height
-                    is_first = False
-                    i += 1
-                    print(f" -> Added {name} ({len(matches)} matches)")
-                else:
-                    max_fit = 0
-                    for k in range(1, len(matches) + 1):
-                        h = calculate_division_height("Cup", matches[:k], is_first)
-                        if current_height + h <= SAFE_CONTENT_HEIGHT_LIMIT or (not sections_to_draw and h <= SAFE_CONTENT_HEIGHT_LIMIT):
-                            max_fit = k
-                        else:
-                            break
-                    if max_fit > 0:
-                        current_matches = matches[:max_fit]
-                        remain_matches = matches[max_fit:]
-                        temp_height = calculate_division_height("Cup", current_matches, is_first)
-                        sections_to_draw.append(("Cup", current_matches))
-                        current_height += temp_height
-                        is_first = False
-                        if remain_matches:
-                            next_cup.append({'division': name, 'matches': remain_matches, 'original_div': "Cup"})
-                        i += 1
-                        print(f" -> Split {name}: {max_fit} matches")
+            elif name.startswith("Cup - Hampshire Vase Cup"):
+                max_m = 2 if trophy_included and part_number == 1 else 6
+                if len(matches) > max_m:
+                    cur = matches[:max_m]
+                    rem = matches[max_m:]
+                    ch = calculate_division_height("Cup", cur, first)
+                    if height + ch <= SAFE_CONTENT_HEIGHT_LIMIT or not sections:
+                        sections.append(("Cup", cur))
+                        height += ch
+                        first = False
+                        if rem:
+                            next_cup.append({'division': name, 'matches': rem})
+                        print(f" -> Added {len(cur)} Vase matches")
                     else:
                         next_cup.append(div)
-                        i += 1
-                continue
-
-        # --- PACK LEAGUE IF NO CUP LEFT ---
-        if not next_cup and remaining_league:
-            i = 0
-            while i < len(remaining_league):
-                div = remaining_league[i]
-                name = div['division']
-                matches = div['matches']
-                h = calculate_division_height(name, matches, is_first)
-
-                if current_height + h <= SAFE_CONTENT_HEIGHT_LIMIT or not sections_to_draw:
-                    sections_to_draw.append((name, matches))
-                    current_height += h
-                    is_first = False
-                    i += 1
-                    print(f" -> Added {name} ({len(matches)} matches)")
                 else:
-                    next_league.extend(remaining_league[i:])
-                    break
-
-        # --- Generate ---
-        if sections_to_draw:
-            print(f"Final: {[s[0] for s in sections_to_draw]}, Height: {current_height}px")
-            create_match_graphic_with_heading(sections_to_draw, logos_folder, save_folder, part_number, template_path, current_date)
+                    if height + h <= SAFE_CONTENT_HEIGHT_LIMIT or not sections:
+                        sections.append(("Cup", matches))
+                        height += h
+                        first = False
+                        print(f" -> Added {name}")
+                    else:
+                        next_cup.append(div)
+                continue
+            else:
+                if height + h <= SAFE_CONTENT_HEIGHT_LIMIT or not sections:
+                    sections.append(("Cup", matches))
+                    height += h
+                    first = False
+                    print(f" -> Added {name}")
+                else:
+                    next_cup.append(div)
+        if sections:
+            print(f"Final: {[s[0] for s in sections]}, {height}px")
+            create_match_graphic_with_heading(sections, logos_folder, save_folder, part_number, template_path, current_date)
             part_number += 1
-        else:
-            print("No sections fit. Stopping.")
-            break
-
         remaining_cup = next_cup
+
+    # === LEAGUE GRAPHICS ===
+    remaining_league = league_divisions.copy()
+    print("\n=== LEAGUE GRAPHICS ===")
+    while remaining_league:
+        sections = []
+        height = 0
+        next_league = []
+        first = True
+        print(f"\n--- League Part {part_number} ---")
+        for div in remaining_league:
+            name = div['division']
+            matches = div['matches']
+            h = calculate_division_height(name, matches, first)
+            if height + h <= SAFE_CONTENT_HEIGHT_LIMIT or not sections:
+                sections.append((name, matches))
+                height += h
+                first = False
+                print(f" -> Added {name}")
+            else:
+                next_league.append(div)
+        if sections:
+            print(f"Final: {[s[0] for s in sections]}, {height}px")
+            create_match_graphic_with_heading(sections, logos_folder, save_folder, part_number, template_path, current_date)
+            part_number += 1
         remaining_league = next_league
 
-    print(f"\nCompleted generating {part_number-1} result graphic(s)")
+    print(f"\nCompleted: {part_number-1} graphic(s)")
 
-print("All functions defined. Attempting to run main function.")
+print("All functions ready.")
 if __name__ == "__main__":
     generate_results_graphics(RESULTS_FILE_PATH, LOGOS_FOLDER, SAVE_FOLDER, TEMPLATE_PATH)
