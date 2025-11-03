@@ -217,7 +217,15 @@ def calculate_division_height(division_name: str, matches: list, is_first_divisi
         
         # Space *before* the fixture/result.
         if j > 0:
-            prev_match_cup_name = matches[j-1][4] if j > 0 else None
+    prev_match_cup_name = matches[j-1][4]
+    current_match_cup_name = match[4]
+    
+    is_start_of_new_cup_group = (division_name.lower().startswith("cup") and 
+                                 current_match_cup_name and 
+                                 current_match_cup_name != prev_match_cup_name)
+    
+    if not is_start_of_new_cup_group:
+        match_height += FIXTURE_SPACING
             current_match_cup_name = match[4]
             
             is_start_of_new_cup_group = (division_name.lower().startswith("cup") and 
