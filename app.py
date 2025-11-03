@@ -18,6 +18,7 @@ GIT_FILES_TO_COPY = [
     "Results - automated.py",
     "table - automated.py",
     "BebasNeue Regular.ttf",
+    "BebasKai.ttf",
 ]
 GIT_DIRS_TO_COPY = [
     "Logos",
