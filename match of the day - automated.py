@@ -5,14 +5,14 @@ import pandas as pd # Import pandas for Excel reading
 
 # --- Configuration Constants ---
 # Paths
-LOGOS_FOLDER = r"C:\Users\Matt\Desktop\Sunday Football\Logos"
-SAVE_FOLDER = r"C:\Users\Matt\Desktop\Sunday Football\Graphics"
-TEMPLATES_FOLDER = r"C:\Users\Matt\Desktop\Sunday Football\Templates"
+LOGOS_FOLDER = "Logos"
+SAVE_FOLDER = "Graphics"
+TEMPLATES_FOLDER = "Templates"
 MATCH_OF_THE_DAY_TEMPLATE_PATH = os.path.join(TEMPLATES_FOLDER, "match_of_the_day_template.png")
 # New template for results with many scorers (no footer)
 MATCH_OF_THE_DAY_RESULT_TEMPLATE_NO_FOOTER_PATH = os.path.join(TEMPLATES_FOLDER, "match_of_the_day_result_template.png")
 FONT_PATH = r"C:\Users\Matt\AppData\Local\Microsoft\Windows\Fonts\BebasKai.ttf" # Using BebasKai as per your original script
-MATCH_DATA_EXCEL_PATH = r"C:\Users\Matt\Desktop\Sunday Football\match of the day.xlsx" # New: Path to your match data Excel
+MATCH_DATA_EXCEL_PATH = "match of the day.xlsx"
 
 # Image Dimensions
 IMAGE_WIDTH = 1080
