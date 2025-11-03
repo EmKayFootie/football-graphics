@@ -11,7 +11,7 @@ TEMPLATES_FOLDER = "Templates"
 MATCH_OF_THE_DAY_TEMPLATE_PATH = os.path.join(TEMPLATES_FOLDER, "match_of_the_day_template.png")
 # New template for results with many scorers (no footer)
 MATCH_OF_THE_DAY_RESULT_TEMPLATE_NO_FOOTER_PATH = os.path.join(TEMPLATES_FOLDER, "match_of_the_day_result_template.png")
-FONT_PATH = "BebasKai.ttf"  # In project root
+FONT_PATH = "BebasNeue Regular.ttf"  # Already in repo root
 MATCH_DATA_EXCEL_PATH = "match of the day.xlsx"
 
 # Image Dimensions
