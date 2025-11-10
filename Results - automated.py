@@ -392,7 +392,7 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
                     first = False
                     trophy_included = True
                 else:
- Harp next_cup.append(div)
+ next_cup.append(div)
                 continue
 
             elif name.startswith("Cup - Hampshire Vase Cup"):
