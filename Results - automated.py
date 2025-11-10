@@ -252,7 +252,7 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     for div_name, matches in sections_to_draw:
         if not is_first:
             y_offset += FIXTURE_SPACING
-        heading = "Cup Results" if div_name == "Cup" else f"{div_name} Results"
+        heading = "Cup" if div_name == "Cup" else f"{div_name} Results"
         bbox = d.textbbox((0,0), heading, font=heading_font)
         x = (IMAGE_WIDTH - (bbox[2]-bbox[0])) // 2
         d.text((x, y_offset + 20), heading, fill=(255,255,255), font=heading_font)
