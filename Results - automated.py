@@ -10,6 +10,7 @@ print("STARTING RESULTS SCRIPT")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- Configuration Constants ---
+RESULTS_FILE_PATH = os.path.join(BASE_DIR, "results.xlsx")
 LOGOS_FOLDER = os.path.join(BASE_DIR, "Logos")
 SAVE_FOLDER = os.path.join(BASE_DIR, "Graphics")
 TEMPLATES_FOLDER = os.path.join(BASE_DIR, "Templates")
