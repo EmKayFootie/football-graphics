@@ -66,7 +66,7 @@ if os.path.exists(FONT_PATH):
     try:
         HEADING_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
         CUP_NAME_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_CUP_NAME)
-        heading_bbox = HEADING_FONT_TEMP.getbbox("Division 1 Results")
+        heading_bbox = HEADING_FONT_TEMP.getbbox("Division 1")
         cup_name_bbox = CUP_NAME_FONT_TEMP.getbbox("Example Cup Name")
         HEADING_SPACE = 20 + (heading_bbox[3] - heading_bbox[1]) + 20
         CUP_NAME_SPACE = 5 + (cup_name_bbox[3] - cup_name_bbox[1]) + 10
