@@ -3,7 +3,6 @@ from PIL import Image, ImageDraw, ImageFont
 import pandas as pd
 from datetime import datetime
 from collections import defaultdict
-
 print("STARTING RESULTS SCRIPT")
 
 # --- Streamlit/GitHub Environment Setup ---
@@ -22,7 +21,6 @@ IMAGE_WIDTH = 1080
 IMAGE_HEIGHT = 1350
 CONTENT_START_Y = 251.97
 SAFE_CONTENT_HEIGHT_LIMIT = 950  # Conservative limit
-
 LEFT_PADDING = 5
 TEAM_BOX_WIDTH = 330
 SCORE_BOX_WIDTH = 120
@@ -51,7 +49,6 @@ FONT_SIZE_DATE = 40
 FONT_SIZE_DATE_MIN = 30
 FONT_SIZE_PENALTY_SCORE = 32
 FONT_SIZE_PENALTIES_LABEL = 28
-
 VISUAL_Y_OFFSET_CORRECTION = -5
 
 # Special Mappings
@@ -65,12 +62,11 @@ TEAMS_FOR_SMALLER_FONT = ["AFC Aldermaston A", "AFC Aldermaston B"]
 # --- Pre-calculate spacing ---
 HEADING_SPACE = 100
 CUP_NAME_SPACE = 70
-
 if os.path.exists(FONT_PATH):
     try:
         HEADING_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
         CUP_NAME_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_CUP_NAME)
-        heading_bbox = HEADING_FONT_TEMP.getbbox("Cup Results")
+        heading_bbox = HEADING_FONT_TEMP.getbbox("Division 1 Results")
         cup_name_bbox = CUP_NAME_FONT_TEMP.getbbox("Example Cup Name")
         HEADING_SPACE = 20 + (heading_bbox[3] - heading_bbox[1]) + 20
         CUP_NAME_SPACE = 5 + (cup_name_bbox[3] - cup_name_bbox[1]) + 10
@@ -79,14 +75,16 @@ if os.path.exists(FONT_PATH):
 else:
     print(f"Font not found at {FONT_PATH}. Using defaults.")
 
+# --- NEW: Enforce League Division Order ---
+LEAGUE_DIVISION_ORDER = ["Division 1", "Division 2", "Division 3", "Division 4"]
+
 print("Configuration constants loaded.")
 
 # --- Helper Functions ---
-
 def get_logo(team_name: str, logos_folder: str) -> Image.Image:
     team_name_lower = team_name.strip().lower()
     team_name_clean = team_name.strip()
-    
+
     # Special mapping
     for key, filename in SPECIAL_LOGO_MAPPING.items():
         if key in team_name_lower:
@@ -99,7 +97,7 @@ def get_logo(team_name: str, logos_folder: str) -> Image.Image:
                         print(f"Error loading mapped logo: {e}")
                         break
 
-    # Search by name
+    # Search by name variants
     search_variants = [team_name_lower.replace(" ", "")]
     if "utd" in team_name_lower: search_variants.append(team_name_lower.replace("utd", "united").replace(" ", ""))
     if "united" in team_name_lower: search_variants.append(team_name_lower.replace("united", "utd").replace(" ", ""))
@@ -126,6 +124,7 @@ def get_logo(team_name: str, logos_folder: str) -> Image.Image:
         print(f"Generic logo failed: {e}. Using gray placeholder.")
         return Image.new("RGBA", (LOGO_WIDTH, LOGO_HEIGHT), (200, 200, 200, 255))
 
+
 def parse_matches_from_file(file_path: str, division: str) -> list[tuple]:
     matches = []
     try:
@@ -143,6 +142,7 @@ def parse_matches_from_file(file_path: str, division: str) -> list[tuple]:
     except Exception as e:
         print(f"Error reading {division}: {e}")
     return matches
+
 
 def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.ImageDraw) -> list[str]:
     words = text.split()
@@ -163,6 +163,7 @@ def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: Ima
         lines.append(" ".join(current_line))
     return lines
 
+
 def get_wrapped_text_block_height(lines: list[str], font: ImageFont.FreeTypeFont, line_spacing: int, draw: ImageDraw.ImageDraw) -> int:
     if not lines: return 0
     total = 0
@@ -171,6 +172,7 @@ def get_wrapped_text_block_height(lines: list[str], font: ImageFont.FreeTypeFont
         total += bbox[3] - bbox[1]
         if i < len(lines) - 1: total += line_spacing
     return total
+
 
 def calculate_division_height(division_name: str, matches: list, is_first_division: bool = True) -> int:
     height = HEADING_SPACE
@@ -188,6 +190,7 @@ def calculate_division_height(division_name: str, matches: list, is_first_divisi
         height += h
     return height
 
+
 # --- Graphic Generation ---
 def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folder: str, save_folder: str, part_number: int, template_path: str, current_date: datetime):
     try:
@@ -197,6 +200,7 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     except Exception as e:
         print(f"Template error: {e}. Using blank.")
         template = Image.new("RGBA", (IMAGE_WIDTH, IMAGE_HEIGHT), (0,0,0,0))
+
     img = template.copy()
     d = ImageDraw.Draw(img)
 
@@ -244,16 +248,20 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
 
     y_offset = CONTENT_START_Y
     is_first = True
+
     for div_name, matches in sections_to_draw:
-        if not is_first: y_offset += FIXTURE_SPACING
+        if not is_first:
+            y_offset += FIXTURE_SPACING
         heading = "Cup Results" if div_name == "Cup" else f"{div_name} Results"
         bbox = d.textbbox((0,0), heading, font=heading_font)
         x = (IMAGE_WIDTH - (bbox[2]-bbox[0])) // 2
         d.text((x, y_offset + 20), heading, fill=(255,255,255), font=heading_font)
         y_offset += HEADING_SPACE
+
         last_cup = None
         for match in matches:
             t1, s1, s2, t2, cup_name, pen = match
+
             if div_name == "Cup" and cup_name and cup_name != last_cup:
                 bbox = d.textbbox((0,0), cup_name, font=cup_name_font)
                 d.text((LEFT_PADDING, y_offset + 5), cup_name, fill=(255,255,0), font=cup_name_font)
@@ -311,9 +319,10 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
                 lx = x2 + (TEAM_BOX_WIDTH - (bbox[2]-bbox[0]))//2
                 d.text((lx, cur_y), line, fill=(255,255,255), font=f2)
                 cur_y += (bbox[3]-bbox[1]) + LINE_SPACING
-
             img.paste(logo2, (x2 + TEAM_BOX_WIDTH + 2, int(y_offset) + 1), logo2)
+
             y_offset += BOX_HEIGHT
+
         is_first = False
 
     # Save
@@ -322,15 +331,18 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     path = os.path.join(save_folder, f"Results_Part{part_number}_{time_str}.png")
     img.save(path)
     print(f"Graphic saved: {path}")
+    return path  # Return path for Streamlit display
 
-# --- MAIN LOGIC (FIXED) ---
+
+# --- MAIN LOGIC WITH FIXTURES-STYLE LEAGUE GROUPING ---
 def generate_results_graphics(file_path: str, logos_folder: str, save_folder: str, template_path: str):
     # Date
     try:
         df = pd.read_excel(file_path, sheet_name='Date')
         date_str = str(df['Date'].iloc[0]).strip()
         current_date = pd.to_datetime(date_str, errors='coerce')
-        if pd.isna(current_date): raise ValueError()
+        if pd.isna(current_date):
+            raise ValueError()
         print(f"Date parsed: {current_date.strftime('%d %B %Y')}")
     except Exception as e:
         print(f"Date error: {e}. Using now.")
@@ -338,11 +350,14 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
 
     # Load data
     cup_matches = parse_matches_from_file(file_path, "Cup")
-    league_divisions = []
-    for div in ["Division 1", "Division 2", "Division 3", "Division 4"]:
+    league_divisions_map = {}
+    for div in LEAGUE_DIVISION_ORDER:
         matches = parse_matches_from_file(file_path, div)
         if matches:
-            league_divisions.append({'division': div, 'matches': matches})
+            league_divisions_map[div] = {'division': div, 'matches': matches}
+
+    # Reconstruct in fixed order
+    league_divisions = [league_divisions_map[div] for div in LEAGUE_DIVISION_ORDER if div in league_divisions_map]
 
     # Group cups
     cup_groups = defaultdict(list)
@@ -354,6 +369,7 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
 
     part_number = 1
     trophy_included = False
+    saved_paths = []
 
     # === CUP GRAPHICS ===
     remaining_cup = cup_divisions.copy()
@@ -363,21 +379,22 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
         height = 0
         next_cup = []
         first = True
-        print(f"\n--- Cup Part {part_number} ---")
+
         for div in remaining_cup:
             name = div['division']
             matches = div['matches']
             h = calculate_division_height("Cup", matches, first)
+
             if name.startswith("Cup - Hampshire Trophy Cup") and not trophy_included:
                 if height + h <= SAFE_CONTENT_HEIGHT_LIMIT or not sections:
                     sections.append(("Cup", matches))
                     height += h
                     first = False
                     trophy_included = True
-                    print(f" -> Added {name}")
                 else:
-                    next_cup.append(div)
+ Harp next_cup.append(div)
                 continue
+
             elif name.startswith("Cup - Hampshire Vase Cup"):
                 max_m = 2 if trophy_included and part_number == 1 else 6
                 if len(matches) > max_m:
@@ -390,7 +407,6 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
                         first = False
                         if rem:
                             next_cup.append({'division': name, 'matches': rem})
-                        print(f" -> Added {len(cur)} Vase matches")
                     else:
                         next_cup.append(div)
                 else:
@@ -398,7 +414,6 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
                         sections.append(("Cup", matches))
                         height += h
                         first = False
-                        print(f" -> Added {name}")
                     else:
                         next_cup.append(div)
                 continue
@@ -407,43 +422,102 @@ def generate_results_graphics(file_path: str, logos_folder: str, save_folder: st
                     sections.append(("Cup", matches))
                     height += h
                     first = False
-                    print(f" -> Added {name}")
                 else:
                     next_cup.append(div)
-        if sections:
-            print(f"Final: {[s[0] for s in sections]}, {height}px")
-            create_match_graphic_with_heading(sections, logos_folder, save_folder, part_number, template_path, current_date)
-            part_number += 1
-        remaining_cup = next_cup
 
-    # === LEAGUE GRAPHICS ===
-    remaining_league = league_divisions.copy()
+        if sections:
+            print(f"Final Cup Part {part_number}: {[s[0] for s in sections]}, {height}px")
+            path = create_match_graphic_with_heading(sections, logos_folder, save_folder, part_number, template_path, current_date)
+            saved_paths.append(path)
+            part_number += 1
+
+        remaining_cup = next_cup
+        if not next_cup and sections:
+            break
+
+    # === LEAGUE GRAPHICS WITH D1+D2+D3 GROUPING ===
     print("\n=== LEAGUE GRAPHICS ===")
+    d1_data = next((d for d in league_divisions if d['division'] == "Division 1"), None)
+    d2_data = next((d for d in league_divisions if d['division'] == "Division 2"), None)
+    d3_data = next((d for d in league_divisions if d['division'] == "Division 3"), None)
+    d4_data = next((d for d in league_divisions if d['division'] == "Division 4"), None)
+
+    # PART 1: First Graphic — D1 + D2 + D3 (if fits)
+    g1_sections = []
+    g1_height = 0
+    g1_first = True
+    d3_in_g1 = False
+
+    if d1_data:
+        h1 = calculate_division_height(d1_data['division'], d1_data['matches'], g1_first)
+        if h1 <= SAFE_CONTENT_HEIGHT_LIMIT:
+            g1_sections.append((d1_data['division'], d1_data['matches']))
+            g1_height += h1
+            g1_first = False
+
+    if d2_data and g1_sections:
+        h2 = calculate_division_height(d2_data['division'], d2_data['matches'], g1_first)
+        if g1_height + h2 <= SAFE_CONTENT_HEIGHT_LIMIT:
+            g1_sections.append((d2_data['division'], d2_data['matches']))
+            g1_height += h2
+            g1_first = False
+
+    if d3_data and len(g1_sections) >= 1:  # At least D1
+        h3 = calculate_division_height(d3_data['division'], d3_data['matches'], g1_first)
+        if g1_height + h3 <= SAFE_CONTENT_HEIGHT_LIMIT:
+            g1_sections.append((d3_data['division'], d3_data['matches']))
+            g1_height += h3
+            d3_in_g1 = True
+
+    if g1_sections:
+        print(f"\n--- League Graphic {part_number}: {[s[0] for s in g1_sections]}, {g1_height}px ---")
+        path = create_match_graphic_with_heading(g1_sections, logos_folder, save_folder, part_number, template_path, current_date)
+        saved_paths.append(path)
+        part_number += 1
+
+    # PART 2: Remaining divisions
+    remaining_league = []
+    if d2_data and not any(s[0] == "Division 2" for s in g1_sections):
+        remaining_league.append(d2_data)
+    if d3_data and not d3_in_g1:
+        remaining_league.append(d3_data)
+    if d4_data:
+        remaining_league.append(d4_data)
+
+    # PART 3: Greedy for rest
     while remaining_league:
         sections = []
         height = 0
         next_league = []
         first = True
-        print(f"\n--- League Part {part_number} ---")
+
         for div in remaining_league:
             name = div['division']
             matches = div['matches']
-            h = calculate_division_height(name, matches, first)
+            h = calculate_division_height(name, matches, first and not sections)
             if height + h <= SAFE_CONTENT_HEIGHT_LIMIT or not sections:
                 sections.append((name, matches))
                 height += h
                 first = False
-                print(f" -> Added {name}")
             else:
                 next_league.append(div)
-        if sections:
-            print(f"Final: {[s[0] for s in sections]}, {height}px")
-            create_match_graphic_with_heading(sections, logos_folder, save_folder, part_number, template_path, current_date)
-            part_number += 1
-        remaining_league = next_league
 
-    print(f"\nCompleted: {part_number-1} graphic(s)")
+        if sections:
+            print(f"Final League Part {part_number}: {[s[0] for s in sections]}, {height}px")
+            path = create_match_graphic_with_heading(sections, logos_folder, save_folder, part_number, template_path, current_date)
+            saved_paths.append(path)
+            part_number += 1
+
+        remaining_league = next_league
+        if not next_league and sections:
+            break
+
+    print(f"\nCompleted: {part_number-1} graphic(s) generated")
+    return saved_paths
+
 
 print("All functions ready.")
+
+# --- Execution (for local testing) ---
 if __name__ == "__main__":
     generate_results_graphics(RESULTS_FILE_PATH, LOGOS_FOLDER, SAVE_FOLDER, TEMPLATE_PATH)
