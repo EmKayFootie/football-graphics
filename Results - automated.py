@@ -66,7 +66,7 @@ if os.path.exists(FONT_PATH):
     try:
         HEADING_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_HEADING)
         CUP_NAME_FONT_TEMP = ImageFont.truetype(FONT_PATH, FONT_SIZE_CUP_NAME)
-        heading_bbox = HEADING_FONT_TEMP.getbbox("Division 1")
+        heading_bbox = HEADING_FONT_TEMP.getbbox("Division 1 Results")
         cup_name_bbox = CUP_NAME_FONT_TEMP.getbbox("Example Cup Name")
         HEADING_SPACE = 20 + (heading_bbox[3] - heading_bbox[1]) + 20
         CUP_NAME_SPACE = 5 + (cup_name_bbox[3] - cup_name_bbox[1]) + 10
@@ -252,7 +252,7 @@ def create_match_graphic_with_heading(sections_to_draw: list[tuple], logos_folde
     for div_name, matches in sections_to_draw:
         if not is_first:
             y_offset += FIXTURE_SPACING
-        heading = "Cup" if div_name == "Cup" else f"{div_name} Results"
+        heading = "Cup" if div_name == "Cup" else f"{div_name}"
         bbox = d.textbbox((0,0), heading, font=heading_font)
         x = (IMAGE_WIDTH - (bbox[2]-bbox[0])) // 2
         d.text((x, y_offset + 20), heading, fill=(255,255,255), font=heading_font)
